@@ -1,0 +1,20 @@
+node_modules
+dist
+.env*
+!.env.example
+*.log
+.DS_Store
+.vite
+coverage
+*.tsbuildinfo
+supabase/.temp
+
+# Production data and import/export working files never belong in this public repository.
+imports/
+exports/
+private-data/
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.pdf

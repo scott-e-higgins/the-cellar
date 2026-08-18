@@ -1,0 +1,20 @@
+project_id = "the-cellar"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173", "https://scott-e-higgins.github.io/the-cellar/"]
+enable_signup = false
+
+[storage]
+enabled = true
+file_size_limit = "25MiB"
