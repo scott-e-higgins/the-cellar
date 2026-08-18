@@ -102,7 +102,7 @@ body::before {
 .future-card p { margin: 0; color: var(--muted); font-size: 13px; }
 
 .wine-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
-.wine-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--ivory); box-shadow: var(--shadow-sm); }
+.wine-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); color: inherit; background: var(--ivory); box-shadow: var(--shadow-sm); text-align: left; }
 .wine-visual { min-height: 128px; display: grid; place-items: center; align-content: center; gap: 9px; color: var(--burgundy); background: radial-gradient(circle at 50% 38%, #fffaf0 0 16%, transparent 17%), linear-gradient(135deg, #eedfc6, #dfcba8); border-bottom: 1px solid #d7c5a7; }
 .wine-visual span { color: #745f3c; font-size: 8px; font-weight: 700; letter-spacing: .18em; }
 .wine-card-copy { padding: 14px; }
@@ -111,7 +111,7 @@ body::before {
 .wine-card-copy > strong { display: block; margin-top: 11px; color: var(--burgundy); font-size: 11px; }
 .cellar-results { margin-top: 13px; }
 .wine-list, .compact-list { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--ivory); box-shadow: var(--shadow-sm); }
-.wine-row, .winery-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid #e7ddca; }
+.wine-row, .winery-row { width: 100%; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 14px; border: 0; border-bottom: 1px solid #e7ddca; color: inherit; background: transparent; text-align: left; }
 .wine-row:last-child, .winery-row:last-child { border-bottom: 0; }
 .row-icon { width: 40px; height: 40px; display: grid; place-items: center; color: var(--burgundy); background: #f3e3d5; }
 .wine-row strong, .wine-row small, .winery-row strong, .winery-row small { display: block; }
@@ -216,6 +216,23 @@ body::before {
 .prerequisite { padding: 18px; border: 1px solid #d9c69f; border-radius: 8px; background: #f3e6c7; }
 .prerequisite strong { color: var(--burgundy); }
 .prerequisite p { margin: 5px 0 0; color: #75654d; font-size: 12px; line-height: 1.5; }
+
+.management-modal { width: min(calc(100% - 24px), 680px); }
+.detail-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 17px; padding: 4px; border-radius: 8px; background: #e9dfcf; }
+.detail-tabs button { border: 0; border-radius: 6px; padding: 9px; color: var(--muted); background: transparent; font-weight: 700; }
+.detail-tabs button.active { color: var(--burgundy); background: var(--ivory); box-shadow: var(--shadow-sm); }
+.form-section-title { margin: 8px 0 -3px; font: 700 19px 'Playfair Display', serif; }
+.preference-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin: 0; padding: 13px; border: 1px solid #d8c8ae; border-radius: 8px; }
+.preference-card legend { padding: 0 6px; color: var(--burgundy); font-weight: 700; }
+.preference-card label:last-child { grid-column: 1 / -1; }
+.history-list { display: grid; gap: 9px; margin-top: 18px; }
+.history-list article { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--ivory); }
+.history-list p { margin: 5px 0; color: var(--muted); font-size: 12px; }
+.history-list small { color: var(--burgundy); font-weight: 700; }
+.empty-copy, .media-panel { margin-top: 18px; padding: 22px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; background: var(--ivory); line-height: 1.5; }
+.upload-button { display: inline-flex; margin-top: 10px; border-radius: 7px; padding: 11px 16px; color: white; background: var(--burgundy); font-weight: 700; cursor: pointer; }
+.upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.workflow-form hr { width: 100%; border: 0; border-top: 1px solid var(--line); }
 
 .auth-page, .setup-page, .loading-page { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom)); background:
   radial-gradient(circle at 50% 10%, rgba(216, 189, 122, .24), transparent 32%), var(--chardonnay); }
