@@ -402,7 +402,7 @@ function MoreView({ household, onSignOut }: { household: HouseholdContext; onSig
       <div className="more-list">{MORE_LINKS.map((item) => <button key={item.label}><span className="more-icon"><Icon name={item.icon}/></span><span><strong>{item.label}</strong><small>{item.detail}</small></span><Icon name="chevron" size={18}/></button>)}</div>
       <section className="import-note"><p className="eyebrow burgundy">IMPORT GUARDRAIL</p><h3>Spreadsheet import is intentionally locked</h3><p>The original spreadsheet will be mapped, previewed and validated before any production wine data is migrated.</p></section>
       <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
-      <p className="version-label">The Cellar v0.2.0</p>
+      <p className="version-label">The Cellar v0.2.1</p>
     </div>
   )
 }
