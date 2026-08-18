@@ -12,9 +12,7 @@ The source repository is intentionally public, consistent with the existing Trav
 
 The initial v1 application is complete: authentication, Home, inventory search and filters, wine and winery detail/editing, purchase and movement history, configurable storage, atomic bottle opening with personal reviews, visits, private photos, private receipts/documents, favorites, statistics, PWA behavior, and future Travel Journal reference architecture.
 
-The only intentionally gated activity is production spreadsheet migration. It still requires the original source file and approval of the generated dry-run validation report.
-
-The UI deliberately displays honest zero-data states until the production database contains real records. Demo records are never compiled into the default build.
+The approved historical spreadsheet import has been completed in production. Private inventory records and import payloads are not stored in this repository. Demo records are never compiled into the default build.
 
 ## Stack
 
@@ -52,6 +50,8 @@ Create these repository secrets:
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 
 In repository settings, choose **GitHub Actions** as the Pages source. A push to `main` then tests, builds, and deploys the PWA.
+
+The production custom domain is `https://cellar.higgshome.com`. In the GitHub Pages settings, set `cellar.higgshome.com` as the custom domain. At the DNS provider, create a `CNAME` record for `cellar` pointing directly to `scott-e-higgins.github.io` and enable HTTPS after GitHub provisions the certificate.
 
 The deployed application shell is publicly reachable, but application records require a valid Supabase session and matching household membership. The repository and static bundle must always be treated as public.
 

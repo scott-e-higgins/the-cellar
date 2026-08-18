@@ -12,7 +12,7 @@ major_version = 17
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:5173", "https://scott-e-higgins.github.io/the-cellar/"]
+additional_redirect_urls = ["http://localhost:5173", "https://cellar.higgshome.com/", "https://scott-e-higgins.github.io/the-cellar/"]
 enable_signup = false
 
 [storage]
