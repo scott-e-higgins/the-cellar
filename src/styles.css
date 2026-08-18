@@ -134,6 +134,10 @@ body::before {
 .filter-button { width: 100%; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; color: var(--charcoal); background: rgba(255, 250, 240, .72); text-align: left; font-weight: 700; }
 .filter-button svg { margin-left: auto; }
 .filter-count { min-width: 21px; height: 21px; display: grid; place-items: center; border-radius: 99px; color: white; background: var(--burgundy); font-size: 10px; }
+.filter-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin: 9px 0 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--ivory); box-shadow: var(--shadow-sm); }
+.filter-panel label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.filter-panel select { min-width: 0; border: 1px solid #cbbba4; border-radius: 6px; padding: 9px; background: white; font-size: 14px; }
+.filter-panel > button { border: 0; color: var(--burgundy); background: transparent; font-weight: 700; text-align: left; }
 .inventory-empty { min-height: 335px; margin-top: 13px; display: grid; place-items: center; align-content: center; padding: 35px 24px; text-align: center; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255, 250, 240, .62); }
 .bottle-silhouette { width: 76px; height: 76px; display: grid; place-items: center; margin-bottom: 15px; color: var(--burgundy); border: 1px solid #d5c4a8; background: #f4e8d5; }
 .inventory-empty h3 { margin: 0 0 7px; font: 700 23px 'Playfair Display', serif; }
@@ -233,6 +237,23 @@ body::before {
 .upload-button { display: inline-flex; margin-top: 10px; border-radius: 7px; padding: 11px 16px; color: white; background: var(--burgundy); font-weight: 700; cursor: pointer; }
 .upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .workflow-form hr { width: 100%; border: 0; border-top: 1px solid var(--line); }
+.detail-hero { display: grid; justify-items: center; gap: 7px; margin: 18px 0; padding: 18px; text-align: center; border: 1px solid var(--line); border-radius: 8px; background: var(--ivory); }
+.detail-hero > div { width: min(100%, 290px); height: 210px; display: grid; place-items: center; overflow: hidden; color: var(--burgundy); background: linear-gradient(145deg,#f4e8d5,#ead6b7); font-size: 54px; }
+.detail-hero img { width: 100%; height: 100%; object-fit: cover; }
+.detail-hero p { margin: 0; color: var(--muted); }
+.detail-hero > strong { color: var(--burgundy); }
+.gallery { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 15px 0; }
+.gallery figure { min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.gallery img { width: 100%; height: 180px; display: block; object-fit: cover; }
+.gallery figcaption { padding: 8px 9px; color: var(--muted); font-size: 11px; }
+.gallery figure > div { display: flex; gap: 6px; padding: 0 8px 8px; }
+.gallery button, .history-list button { border: 1px solid #cbbba4; border-radius: 5px; padding: 6px 8px; color: var(--burgundy); background: var(--ivory); font-size: 10px; font-weight: 700; }
+.breakdown { margin-top: 16px; padding: 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--ivory); }
+.breakdown h3 { margin: 0 0 13px; font: 700 19px 'Playfair Display',serif; }
+.breakdown > div { display: grid; grid-template-columns: minmax(90px,1fr) 2fr auto; align-items: center; gap: 9px; margin: 8px 0; color: var(--muted); font-size: 11px; }
+.breakdown i { min-width: 2px; height: 8px; border-radius: 99px; background: var(--burgundy); }
+.history-list article { display: grid; gap: 3px; }
+.history-list article > small:first-child { color: var(--brass); text-transform: uppercase; }
 
 .auth-page, .setup-page, .loading-page { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom)); background:
   radial-gradient(circle at 50% 10%, rgba(216, 189, 122, .24), transparent 32%), var(--chardonnay); }
@@ -264,6 +285,8 @@ body::before {
   .mode-switch { flex: 0 0 auto; }
   .wine-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .winery-grid { grid-template-columns: 1fr; }
+  .filter-panel { grid-template-columns: 1fr; }
+  .gallery { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 390px) {

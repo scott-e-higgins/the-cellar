@@ -33,11 +33,17 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Test import preview guardrails
+        run: npm run test:import
+
       - name: Build app
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Verify installable PWA output
+        run: npm run verify:pwa
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

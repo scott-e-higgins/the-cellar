@@ -1,185 +1,35 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Snapshot } from './types'
 
-export interface WineRecord {
-  id: string
-  wineryId: string | null
-  wineryName: string | null
-  name: string
-  vintage: number | null
-  nonVintage: boolean
-  style: string | null
-  category: string | null
-  favorite: boolean
-  createdAt: string
-  availableQuantity: number
-}
+export interface WineRecord { id:string; wineryId:string|null; wineryName:string|null; name:string; vintage:number|null; nonVintage:boolean; blendDescription:string|null; style:string|null; category:string|null; sweetness:string|null; country:string|null; state:string|null; region:string|null; appellation:string|null; vineyard:string|null; closure:string|null; officialWineryNotes:string|null; personalNotes:string|null; favorite:boolean; createdAt:string; availableQuantity:number; averageRating:number|null; buyAgain:string[]; storageNames:string[]; selectorNames:string[] }
+export interface WineryRecord { id:string; name:string; region:string|null; state:string|null; country:string|null; city:string|null; address:string|null; websiteUrl:string|null; contactPhone:string|null; contactEmail:string|null; notes:string|null; favorite:boolean; wouldVisitAgain:'yes'|'maybe'|'no'|null; visitCount:number; wineCount:number }
+export interface PersonOption { id:string; displayName:string }
+export interface LocationOption { id:string; name:string; locationType:string; description:string|null; isActive:boolean }
+export interface BottleLot { purchaseItemId:string; purchaseId:string; wineId:string; wineLabel:string; storageLocationId:string; storageLocationName:string; quantity:number }
+export interface PurchaseRecord { id:string; acquisitionDate:string; purchaseLocation:string|null; totalCost:number|null; notes:string|null; selectedBy:string|null; purchasedBy:string|null }
+export interface PurchaseItemRecord { id:string; purchaseId:string; wineId:string; quantity:number; unitPrice:number|null; totalCost:number|null; currentValue:number|null }
+export interface OpeningRecord { id:string; wineId:string; openedAt:string; status:'open'|'finished'; enjoyedWith:string|null; occasion:string|null; memoryNotes:string|null; issueType:string|null; openedBy:string|null }
+export interface VisitRecord { id:string; wineryId:string; visitDate:string; notes:string|null; favorite:boolean; wouldVisitAgain:'yes'|'maybe'|'no'|null }
+export interface PreferenceRecord { id:string; wineId:string; personId:string; favorite:boolean; buyAgain:'yes'|'maybe'|'no'|null; notes:string|null }
+export interface ReviewRecord { id:string; openingId:string; personId:string; rating:number|null; buyAgain:'yes'|'maybe'|'no'|null; tastingNotes:string|null }
+export interface MovementRecord { id:string; purchaseItemId:string; movementType:string; quantity:number; fromLocationId:string|null; toLocationId:string|null; occurredAt:string; reason:string|null }
+export interface PhotoRecord { id:string; wineId:string|null; wineryId:string|null; wineryVisitId:string|null; openingId:string|null; purchaseId:string|null; storagePath:string; caption:string|null; photographedAt:string|null; isHero:boolean }
+export interface DocumentRecord { id:string; purchaseId:string; displayTitle:string; documentType:string; documentDate:string|null; originalFilename:string; storagePath:string; mimeType:string }
+export interface CellarData { snapshot:Snapshot; wines:WineRecord[]; wineries:WineryRecord[]; people:PersonOption[]; locations:LocationOption[]; bottleLots:BottleLot[]; purchases:PurchaseRecord[]; purchaseItems:PurchaseItemRecord[]; openings:OpeningRecord[]; visits:VisitRecord[]; preferences:PreferenceRecord[]; reviews:ReviewRecord[]; movements:MovementRecord[]; photos:PhotoRecord[]; documents:DocumentRecord[] }
+export const EMPTY_CELLAR_DATA:CellarData={snapshot:{currentBottles:0,recordedValue:0,bottlesEnjoyed:0,wineriesRepresented:0},wines:[],wineries:[],people:[],locations:[],bottleLots:[],purchases:[],purchaseItems:[],openings:[],visits:[],preferences:[],reviews:[],movements:[],photos:[],documents:[]}
+type Row=Record<string,unknown>; type Result={data:unknown;error:{message:string}|null}
+const get=(r:Result):Row[]=>{if(r.error)throw new Error(r.error.message);return(r.data??[])as Row[]}; const t=(v:unknown)=>v==null||v===''?null:String(v); const n=(v:unknown)=>v==null||v===''?null:Number(v)
 
-export interface WineryRecord {
-  id: string
-  name: string
-  region: string | null
-  state: string | null
-  country: string | null
-  favorite: boolean
-  wouldVisitAgain: 'yes' | 'maybe' | 'no' | null
-  visitCount: number
-}
-
-export interface PersonOption {
-  id: string
-  displayName: string
-}
-
-export interface LocationOption {
-  id: string
-  name: string
-}
-
-export interface BottleLot {
-  purchaseItemId: string
-  wineId: string
-  wineLabel: string
-  storageLocationId: string
-  storageLocationName: string
-  quantity: number
-}
-
-export interface CellarData {
-  snapshot: Snapshot
-  wines: WineRecord[]
-  wineries: WineryRecord[]
-  people: PersonOption[]
-  locations: LocationOption[]
-  bottleLots: BottleLot[]
-}
-
-export const EMPTY_CELLAR_DATA: CellarData = {
-  snapshot: { currentBottles: 0, recordedValue: 0, bottlesEnjoyed: 0, wineriesRepresented: 0 },
-  wines: [],
-  wineries: [],
-  people: [],
-  locations: [],
-  bottleLots: [],
-}
-
-type QueryResult = { data: unknown; error: { message: string } | null; count?: number | null }
-
-function requireResult<T>(result: QueryResult): T {
-  if (result.error) throw new Error(result.error.message)
-  return (result.data ?? []) as T
-}
-
-export async function loadCellarData(client: SupabaseClient, householdId: string): Promise<CellarData> {
-  const [
-    winesResult,
-    wineriesResult,
-    visitsResult,
-    balancesResult,
-    itemsResult,
-    peopleResult,
-    locationsResult,
-    openingsResult,
-  ] = await Promise.all([
-    client.from('wines').select('id, winery_id, name, vintage, non_vintage, style, category, favorite, created_at').eq('household_id', householdId).order('created_at', { ascending: false }),
-    client.from('wineries').select('id, name, region, state, country, favorite, would_visit_again').eq('household_id', householdId).order('name'),
-    client.from('winery_visits').select('id, winery_id').eq('household_id', householdId),
-    client.from('inventory_balances').select('purchase_item_id, wine_id, storage_location_id, quantity').eq('household_id', householdId),
-    client.from('purchase_items').select('id, wine_id, unit_price, current_value_per_bottle').eq('household_id', householdId),
-    client.from('people').select('id, display_name').eq('household_id', householdId).eq('is_active', true).order('display_name'),
-    client.from('storage_locations').select('id, name').eq('household_id', householdId).eq('is_active', true).order('sort_order').order('name'),
-    client.from('openings').select('id', { count: 'exact' }).eq('household_id', householdId),
-  ])
-
-  const wineRows = requireResult<Array<Record<string, unknown>>>(winesResult)
-  const wineryRows = requireResult<Array<Record<string, unknown>>>(wineriesResult)
-  const visitRows = requireResult<Array<Record<string, unknown>>>(visitsResult)
-  const balanceRows = requireResult<Array<Record<string, unknown>>>(balancesResult)
-  const itemRows = requireResult<Array<Record<string, unknown>>>(itemsResult)
-  const peopleRows = requireResult<Array<Record<string, unknown>>>(peopleResult)
-  const locationRows = requireResult<Array<Record<string, unknown>>>(locationsResult)
-  requireResult(openingsResult)
-
-  const wineryNames = new Map(wineryRows.map((row) => [String(row.id), String(row.name)]))
-  const wineRowsById = new Map(wineRows.map((row) => [String(row.id), row]))
-  const locationsById = new Map(locationRows.map((row) => [String(row.id), String(row.name)]))
-  const itemsById = new Map(itemRows.map((row) => [String(row.id), row]))
-  const quantityByWine = new Map<string, number>()
-
-  for (const row of balanceRows) {
-    const wineId = String(row.wine_id)
-    quantityByWine.set(wineId, (quantityByWine.get(wineId) ?? 0) + Number(row.quantity ?? 0))
-  }
-
-  const wines: WineRecord[] = wineRows.map((row) => ({
-    id: String(row.id),
-    wineryId: row.winery_id ? String(row.winery_id) : null,
-    wineryName: row.winery_id ? wineryNames.get(String(row.winery_id)) ?? null : null,
-    name: String(row.name),
-    vintage: row.vintage === null ? null : Number(row.vintage),
-    nonVintage: Boolean(row.non_vintage),
-    style: row.style ? String(row.style) : null,
-    category: row.category ? String(row.category) : null,
-    favorite: Boolean(row.favorite),
-    createdAt: String(row.created_at),
-    availableQuantity: quantityByWine.get(String(row.id)) ?? 0,
-  }))
-
-  const visitsByWinery = new Map<string, number>()
-  for (const row of visitRows) {
-    const wineryId = String(row.winery_id)
-    visitsByWinery.set(wineryId, (visitsByWinery.get(wineryId) ?? 0) + 1)
-  }
-
-  const wineries: WineryRecord[] = wineryRows.map((row) => ({
-    id: String(row.id),
-    name: String(row.name),
-    region: row.region ? String(row.region) : null,
-    state: row.state ? String(row.state) : null,
-    country: row.country ? String(row.country) : null,
-    favorite: Boolean(row.favorite),
-    wouldVisitAgain: row.would_visit_again as WineryRecord['wouldVisitAgain'],
-    visitCount: visitsByWinery.get(String(row.id)) ?? 0,
-  }))
-
-  const recordedValue = balanceRows.reduce((total, balance) => {
-    const item = itemsById.get(String(balance.purchase_item_id))
-    const value = Number(item?.current_value_per_bottle ?? item?.unit_price ?? 0)
-    return total + Number(balance.quantity ?? 0) * value
-  }, 0)
-
-  const represented = new Set(
-    wines.filter((wine) => wine.availableQuantity > 0 && wine.wineryId).map((wine) => wine.wineryId),
-  ).size
-
-  const bottleLots: BottleLot[] = balanceRows
-    .filter((row) => Number(row.quantity ?? 0) > 0)
-    .map((row) => {
-      const wine = wineRowsById.get(String(row.wine_id))
-      const winery = wine?.winery_id ? wineryNames.get(String(wine.winery_id)) : null
-      const vintage = wine?.non_vintage ? 'NV' : wine?.vintage ?? ''
-      return {
-        purchaseItemId: String(row.purchase_item_id),
-        wineId: String(row.wine_id),
-        wineLabel: [winery, vintage, wine?.name].filter(Boolean).join(' · '),
-        storageLocationId: String(row.storage_location_id),
-        storageLocationName: locationsById.get(String(row.storage_location_id)) ?? 'Unknown location',
-        quantity: Number(row.quantity),
-      }
-    })
-    .sort((a, b) => a.wineLabel.localeCompare(b.wineLabel) || a.storageLocationName.localeCompare(b.storageLocationName))
-
-  return {
-    snapshot: {
-      currentBottles: [...quantityByWine.values()].reduce((sum, value) => sum + value, 0),
-      recordedValue,
-      bottlesEnjoyed: openingsResult.count ?? 0,
-      wineriesRepresented: represented,
-    },
-    wines,
-    wineries,
-    people: peopleRows.map((row) => ({ id: String(row.id), displayName: String(row.display_name) })),
-    locations: locationRows.map((row) => ({ id: String(row.id), name: String(row.name) })),
-    bottleLots,
-  }
+export async function loadCellarData(client:SupabaseClient,householdId:string):Promise<CellarData>{
+ const q=await Promise.all([
+  client.from('wines').select('*').eq('household_id',householdId).order('created_at',{ascending:false}),client.from('wineries').select('*').eq('household_id',householdId).order('name'),client.from('winery_visits').select('*').eq('household_id',householdId).order('visit_date',{ascending:false}),client.from('inventory_balances').select('*').eq('household_id',householdId),client.from('purchase_items').select('*').eq('household_id',householdId),client.from('purchases').select('*').eq('household_id',householdId).order('acquisition_date',{ascending:false}),client.from('people').select('id,display_name').eq('household_id',householdId).eq('is_active',true).order('display_name'),client.from('storage_locations').select('*').eq('household_id',householdId).order('sort_order').order('name'),client.from('openings').select('*').eq('household_id',householdId).order('opened_at',{ascending:false}),client.from('wine_preferences').select('*').eq('household_id',householdId),client.from('tasting_reviews').select('*').eq('household_id',householdId),client.from('inventory_movements').select('*').eq('household_id',householdId).order('occurred_at',{ascending:false}).limit(500),client.from('photos').select('*').eq('household_id',householdId).order('sort_order').order('created_at'),client.from('documents').select('*').eq('household_id',householdId).order('document_date',{ascending:false})]);
+ const [wr,wry,vr,br,ir,pr,per,lr,or,pfr,rr,mr,phr,dr]=q.map(get); const people=new Map(per.map(r=>[String(r.id),String(r.display_name)]));const loc=new Map(lr.map(r=>[String(r.id),String(r.name)]));const winery=new Map(wry.map(r=>[String(r.id),String(r.name)]));const purchase=new Map(pr.map(r=>[String(r.id),r]));const item=new Map(ir.map(r=>[String(r.id),r]));
+ const qty=new Map<string,number>(),stores=new Map<string,Set<string>>(),selectors=new Map<string,Set<string>>();for(const b of br){const id=String(b.wine_id);qty.set(id,(qty.get(id)??0)+Number(b.quantity??0));const l=loc.get(String(b.storage_location_id));if(l&&Number(b.quantity)>0){if(!stores.has(id))stores.set(id,new Set());stores.get(id)!.add(l)}}for(const i of ir){const p=purchase.get(String(i.purchase_id));const s=p?.selected_by_person_id?people.get(String(p.selected_by_person_id)):null;if(s){const id=String(i.wine_id);if(!selectors.has(id))selectors.set(id,new Set());selectors.get(id)!.add(s)}}
+ const openingWine=new Map(or.map(r=>[String(r.id),String(r.wine_id)])),ratings=new Map<string,number[]>();for(const r of rr){const id=openingWine.get(String(r.opening_id));if(id&&r.rating!=null){if(!ratings.has(id))ratings.set(id,[]);ratings.get(id)!.push(Number(r.rating))}}const buys=new Map<string,string[]>();for(const p of pfr)if(p.buy_again){const id=String(p.wine_id);if(!buys.has(id))buys.set(id,[]);buys.get(id)!.push(String(p.buy_again))}
+ const wines:WineRecord[]=wr.map(r=>{const rs=ratings.get(String(r.id))??[];return{id:String(r.id),wineryId:t(r.winery_id),wineryName:r.winery_id?winery.get(String(r.winery_id))??null:null,name:String(r.name),vintage:n(r.vintage),nonVintage:Boolean(r.non_vintage),blendDescription:t(r.blend_description),style:t(r.style),category:t(r.category),sweetness:t(r.sweetness),country:t(r.country),state:t(r.state),region:t(r.region),appellation:t(r.appellation),vineyard:t(r.vineyard),closure:t(r.closure),officialWineryNotes:t(r.official_winery_notes),personalNotes:t(r.personal_notes),favorite:Boolean(r.favorite),createdAt:String(r.created_at),availableQuantity:qty.get(String(r.id))??0,averageRating:rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:null,buyAgain:buys.get(String(r.id))??[],storageNames:[...(stores.get(String(r.id))??[])],selectorNames:[...(selectors.get(String(r.id))??[])]}})
+ const visits=new Map<string,number>(),wineCounts=new Map<string,number>();for(const v of vr)visits.set(String(v.winery_id),(visits.get(String(v.winery_id))??0)+1);for(const w of wr)if(w.winery_id)wineCounts.set(String(w.winery_id),(wineCounts.get(String(w.winery_id))??0)+1)
+ const wineries:WineryRecord[]=wry.map(r=>({id:String(r.id),name:String(r.name),region:t(r.region),state:t(r.state),country:t(r.country),city:t(r.city),address:t(r.address),websiteUrl:t(r.website_url),contactPhone:t(r.contact_phone),contactEmail:t(r.contact_email),notes:t(r.notes),favorite:Boolean(r.favorite),wouldVisitAgain:r.would_visit_again as WineryRecord['wouldVisitAgain'],visitCount:visits.get(String(r.id))??0,wineCount:wineCounts.get(String(r.id))??0}));const recordedValue=br.reduce((sum,b)=>{const i=item.get(String(b.purchase_item_id));return sum+Number(b.quantity??0)*Number(i?.current_value_per_bottle??i?.unit_price??0)},0)
+ const bottleLots:BottleLot[]=br.filter(r=>Number(r.quantity)>0).map(r=>{const i=item.get(String(r.purchase_item_id));const w=wines.find(x=>x.id===String(r.wine_id));return{purchaseItemId:String(r.purchase_item_id),purchaseId:String(i?.purchase_id),wineId:String(r.wine_id),wineLabel:[w?.wineryName,w?.nonVintage?'NV':w?.vintage,w?.name].filter(Boolean).join(' · '),storageLocationId:String(r.storage_location_id),storageLocationName:loc.get(String(r.storage_location_id))??'Unknown',quantity:Number(r.quantity)}})
+ return{snapshot:{currentBottles:[...qty.values()].reduce((a,b)=>a+b,0),recordedValue,bottlesEnjoyed:or.length,wineriesRepresented:new Set(wines.filter(w=>w.availableQuantity>0&&w.wineryId).map(w=>w.wineryId)).size},wines,wineries,people:per.map(r=>({id:String(r.id),displayName:String(r.display_name)})),locations:lr.map(r=>({id:String(r.id),name:String(r.name),locationType:String(r.location_type),description:t(r.description),isActive:Boolean(r.is_active)})),bottleLots,
+ purchases:pr.map(r=>({id:String(r.id),acquisitionDate:String(r.acquisition_date),purchaseLocation:t(r.purchase_location),totalCost:n(r.total_cost),notes:t(r.notes),selectedBy:r.selected_by_person_id?people.get(String(r.selected_by_person_id))??null:null,purchasedBy:r.purchased_by_person_id?people.get(String(r.purchased_by_person_id))??null:null})),purchaseItems:ir.map(r=>({id:String(r.id),purchaseId:String(r.purchase_id),wineId:String(r.wine_id),quantity:Number(r.quantity),unitPrice:n(r.unit_price),totalCost:n(r.total_cost),currentValue:n(r.current_value_per_bottle)})),openings:or.map(r=>({id:String(r.id),wineId:String(r.wine_id),openedAt:String(r.opened_at),status:r.status as 'open'|'finished',enjoyedWith:t(r.enjoyed_with),occasion:t(r.occasion),memoryNotes:t(r.memory_notes),issueType:t(r.issue_type),openedBy:r.opened_by_person_id?people.get(String(r.opened_by_person_id))??null:null})),visits:vr.map(r=>({id:String(r.id),wineryId:String(r.winery_id),visitDate:String(r.visit_date),notes:t(r.notes),favorite:Boolean(r.favorite),wouldVisitAgain:r.would_visit_again as VisitRecord['wouldVisitAgain']})),preferences:pfr.map(r=>({id:String(r.id),wineId:String(r.wine_id),personId:String(r.person_id),favorite:Boolean(r.favorite),buyAgain:r.buy_again as PreferenceRecord['buyAgain'],notes:t(r.notes)})),reviews:rr.map(r=>({id:String(r.id),openingId:String(r.opening_id),personId:String(r.person_id),rating:n(r.rating),buyAgain:r.buy_again as ReviewRecord['buyAgain'],tastingNotes:t(r.tasting_notes)})),movements:mr.map(r=>({id:String(r.id),purchaseItemId:String(r.purchase_item_id),movementType:String(r.movement_type),quantity:Number(r.quantity),fromLocationId:t(r.from_location_id),toLocationId:t(r.to_location_id),occurredAt:String(r.occurred_at),reason:t(r.reason)})),photos:phr.map(r=>({id:String(r.id),wineId:t(r.wine_id),wineryId:t(r.winery_id),wineryVisitId:t(r.winery_visit_id),openingId:t(r.opening_id),purchaseId:t(r.purchase_id),storagePath:String(r.storage_path),caption:t(r.caption),photographedAt:t(r.photographed_at),isHero:Boolean(r.is_hero)})),documents:dr.map(r=>({id:String(r.id),purchaseId:String(r.purchase_id),displayTitle:String(r.display_title),documentType:String(r.document_type),documentDate:t(r.document_date),originalFilename:String(r.original_filename),storagePath:String(r.storage_path),mimeType:String(r.mime_type)}))}
 }

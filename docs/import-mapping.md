@@ -2,6 +2,14 @@
 
 Status: **waiting for the original spreadsheet**. No production import code or data conversion should begin before the file is supplied and this mapping is approved.
 
+The repository includes `scripts/import_preview.py`, a read-only `.xlsx`/`.csv`/`.tsv` profiler. It does not connect to Supabase. When the original spreadsheet arrives, run:
+
+```bash
+python3 scripts/import_preview.py path/to/original.xlsx --output import-preview.json
+```
+
+The generated report contains detected column mapping, counts, reconciliation totals, and row-level exceptions. Source spreadsheets and preview reports remain gitignored.
+
 ## Proposed target mapping
 
 | Source concept | Target | Import rule |

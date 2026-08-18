@@ -1,14 +1,17 @@
 {
   "name": "the-cellar",
   "private": true,
-  "version": "0.3.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "verify:pwa": "node scripts/verify_build.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "import:preview": "python3 scripts/import_preview.py",
+    "test:import": "python3 -m unittest scripts/test_import_preview.py"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

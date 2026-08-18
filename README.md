@@ -2,13 +2,17 @@
 
 The Cellar is a private, cloud-first progressive web app for a household wine collection. It keeps a durable ledger of purchases, bottle locations, movements, openings, tasting notes, winery visits, photos, receipts, and optional references to Travel Journal trips.
 
+Version 1.0.0 completes the initial cloud-first application scope in the Cellar Master Build Brief.
+
 This repository is independent from the Travel Journal. No Travel Journal code or data is modified by this project.
 
 The source repository is intentionally public, consistent with the existing Travel Journal. It contains application code, migrations, placeholders, and documentation only—never passwords, secret/service-role keys, private wine records, receipts, photos, or production exports.
 
 ## Status
 
-Steps 1 and 2 of the build brief are complete. The independent Supabase project, secured relational schema, application shell, PWA configuration, and deployment workflow establish Step 3. The core Step 4 workflows now create wineries, wines, purchases, bottle receipts, openings, and winery visits against the relational schema. Spreadsheet import still waits for the original file and an approved column mapping.
+The initial v1 application is complete: authentication, Home, inventory search and filters, wine and winery detail/editing, purchase and movement history, configurable storage, atomic bottle opening with personal reviews, visits, private photos, private receipts/documents, favorites, statistics, PWA behavior, and future Travel Journal reference architecture.
+
+The only intentionally gated activity is production spreadsheet migration. It still requires the original source file and approval of the generated dry-run validation report.
 
 The UI deliberately displays honest zero-data states until the production database contains real records. Demo records are never compiled into the default build.
 
@@ -58,6 +62,7 @@ npm run dev
 npm test
 npm run build
 npm run preview
+npm run import:preview -- path/to/original.xlsx --output import-preview.json
 ```
 
 ## Design and data rules
@@ -69,4 +74,4 @@ npm run preview
 - Travel Journal references are optional external identifiers and deep-link paths. They do not couple databases.
 - Photos and documents live in private buckets under paths beginning with the household UUID.
 
-See [Architecture](docs/architecture.md), [Data integrity](docs/data-integrity.md), and [Import mapping checkpoint](docs/import-mapping.md).
+See [Architecture](docs/architecture.md), [Data integrity](docs/data-integrity.md), [Import mapping checkpoint](docs/import-mapping.md), and the separately controlled [Travel Journal integration plan](docs/travel-journal-integration-plan.md).
