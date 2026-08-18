@@ -10,11 +10,21 @@ from xml.etree import ElementTree as ET
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main", "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
 DEFAULT_ALIASES = {
     "winery": ["winery", "producer"], "wine": ["wine", "wine name", "name"], "vintage": ["vintage", "year"],
-    "acquired_date": ["acquired date", "purchase date", "date acquired"], "quantity": ["quantity", "purchased", "qty"],
+    "acquired_date": ["acquired date", "purchase date", "date acquired"], "quantity": ["quantity", "qty purchased", "purchased", "qty"],
     "consumed": ["consumed", "opened", "drank"], "remaining": ["remaining", "on hand", "current quantity"],
-    "unit_price": ["price", "unit price"], "total_cost": ["total", "total cost"], "current_value": ["current value", "value"],
-    "storage": ["storage", "location"], "person": ["who", "purchased by", "selected by"], "buy_again": ["buy again"],
+    "unit_price": ["price", "unit price"], "total_cost": ["total", "total cost"], "current_value": ["current $", "current value", "value"],
+    "storage": ["storage", "location"], "person": ["who", "purchased by", "selected by"], "buy_again": ["buy again?", "buy again"],
 }
+
+def find_header_row(grid: list[list[str]]) -> int:
+    """Find the most schema-like row so title rows do not become headers."""
+    known = {alias.casefold() for aliases in DEFAULT_ALIASES.values() for alias in aliases}
+    scored = []
+    for index, row in enumerate(grid[:25]):
+        normalized = {value.strip().casefold() for value in row if value.strip()}
+        scored.append((len(normalized & known), index))
+    score, index = max(scored, default=(0, 0))
+    return index if score else 0
 
 def col_number(cell_ref: str) -> int:
     n = 0
@@ -58,15 +68,21 @@ def valid_date(value: str) -> bool:
         except ValueError: pass
     return False
 def main() -> None:
-    parser=argparse.ArgumentParser(description="Create a read-only Cellar import preview");parser.add_argument("source",type=Path);parser.add_argument("--mapping",type=Path);parser.add_argument("--output",type=Path);args=parser.parse_args()
-    grid=read_rows(args.source); assert grid, "Spreadsheet is empty"; headers=[h.strip() for h in grid[0]]; normalized={h.lower():i for i,h in enumerate(headers)}
+    parser=argparse.ArgumentParser(description="Create a read-only Cellar import preview");parser.add_argument("source",type=Path);parser.add_argument("--mapping",type=Path);parser.add_argument("--output",type=Path);parser.add_argument("--ignore-field",action="append",choices=sorted(DEFAULT_ALIASES),default=[]);args=parser.parse_args()
+    grid=read_rows(args.source); assert grid, "Spreadsheet is empty"; header_row=find_header_row(grid); headers=[h.strip() for h in grid[header_row]]; normalized={h.lower():i for i,h in enumerate(headers)}
     configured=json.loads(args.mapping.read_text()) if args.mapping else {}; mapping={}
     for field,aliases in DEFAULT_ALIASES.items():
+        if field in args.ignore_field:
+            mapping[field]=None
+            continue
         wanted=configured.get(field); candidates=[wanted] if wanted else aliases; mapping[field]=next((normalized[c.lower()] for c in candidates if c and c.lower() in normalized),None)
     records=[]
-    for source_row,row in enumerate(grid[1:],2):
+    for source_row,row in enumerate(grid[header_row+1:],header_row+2):
         if not any(v.strip() for v in row): continue
-        record={field:(row[index].strip() if index is not None and index<len(row) else "") for field,index in mapping.items()};record["source_row"]=source_row;records.append(record)
+        record={field:(row[index].strip() if index is not None and index<len(row) else "") for field,index in mapping.items()};record["source_row"]=source_row
+        # Ignore grouped subheaders and total/footer rows, which have neither a winery nor a wine.
+        if not record["winery"] and not record["wine"]: continue
+        records.append(record)
     issues=[]; wineries=Counter();wines=Counter();locations=Counter();people=Counter();totals={"purchased":0.0,"consumed":0.0,"remaining":0.0,"source_cost":0.0}
     for r in records:
         winery=r["winery"].strip();wine=r["wine"].strip();vintage=r["vintage"].strip().upper() or "UNKNOWN"; qty=numeric(r["quantity"]);consumed=numeric(r["consumed"]);remaining=numeric(r["remaining"])
@@ -81,6 +97,6 @@ def main() -> None:
         if r["storage"]: locations[r["storage"].casefold()]+=1
         if r["person"]: people[r["person"].casefold()]+=1
         totals["purchased"]+=qty or 0;totals["consumed"]+=consumed or 0;totals["remaining"]+=remaining or 0;totals["source_cost"]+=numeric(r["total_cost"]) or 0
-    report={"mode":"dry-run-only","source_file":args.source.name,"source_rows":len(records),"headers":headers,"resolved_mapping":{field:(headers[index] if index is not None else None) for field,index in mapping.items()},"candidate_wineries":len(wineries),"candidate_wines":len(wines),"candidate_purchase_items":len(records),"locations":sorted(locations),"people_values":sorted(people),"totals":totals,"issue_count":len(issues),"issues":issues,"production_writes":0}
+    report={"mode":"dry-run-only","source_file":args.source.name,"header_row":header_row+1,"source_rows":len(records),"headers":headers,"ignored_fields":args.ignore_field,"resolved_mapping":{field:(headers[index] if index is not None else None) for field,index in mapping.items()},"candidate_wineries":len(wineries),"candidate_wines":len(wines),"candidate_purchase_items":len(records),"locations":sorted(locations),"people_values":sorted(people),"totals":totals,"issue_count":len(issues),"issues":issues,"production_writes":0}
     output=json.dumps(report,indent=2);args.output.write_text(output+"\n") if args.output else print(output)
 if __name__=="__main__": main()
