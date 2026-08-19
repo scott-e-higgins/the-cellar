@@ -2,7 +2,9 @@
 
 The Cellar is a private, cloud-first progressive web app for a household wine collection. It keeps a durable ledger of purchases, bottle locations, movements, openings, tasting notes, winery visits, photos, receipts, and optional references to Travel Journal trips.
 
-Version 1.0.0 completes the initial cloud-first application scope in the Cellar Master Build Brief.
+The Cellar remains in active pre-1.0 development. Scott will explicitly decide when the application is ready to become version 1.0.0.
+
+The application version has one source of truth: the root `package.json`. The interface derives its More-screen version label from that value rather than duplicating a manually typed version in a component.
 
 This repository is independent from the Travel Journal. No Travel Journal code or data is modified by this project.
 
@@ -10,7 +12,7 @@ The source repository is intentionally public, consistent with the existing Trav
 
 ## Status
 
-The initial v1 application is complete: authentication, Home, inventory search and filters, wine and winery detail/editing, purchase and movement history, configurable storage, atomic bottle opening with personal reviews, visits, private photos, private receipts/documents, favorites, statistics, PWA behavior, and future Travel Journal reference architecture.
+The active development build includes authentication, Home, inventory search and filters, wine and winery detail/editing, acquisition and movement history, configurable storage, atomic bottle opening with personal reviews, visits, private photos, private receipts/documents, favorites, gift tracking, statistics, PWA behavior, and future Travel Journal reference architecture.
 
 The approved historical spreadsheet import has been completed in production. Private inventory records and import payloads are not stored in this repository. Demo records are never compiled into the default build.
 
