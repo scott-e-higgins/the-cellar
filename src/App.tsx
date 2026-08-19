@@ -8,8 +8,8 @@ import type { HouseholdContext, NavView, QuickAction } from './lib/types'
 
 const QUICK_ACTIONS: Array<{ id: QuickAction; label: string; hint: string; icon: IconName }> = [
   { id: 'add-wine', label: 'Add Wine', hint: 'Create a wine definition', icon: 'bottle' },
-  { id: 'record-purchase', label: 'Record Purchase', hint: 'Add bottles and provenance', icon: 'receipt' },
-  { id: 'open-bottle', label: 'Open a Bottle', hint: 'Record a memory and tasting', icon: 'open' },
+  { id: 'record-purchase', label: 'Add Bottles', hint: 'Purchased or received as a gift', icon: 'receipt' },
+  { id: 'open-bottle', label: 'Bottle Leaving', hint: 'Opened or given as a gift', icon: 'open' },
   { id: 'add-winery', label: 'Add Winery', hint: 'Create a winery profile', icon: 'winery' },
   { id: 'add-winery-visit', label: 'Add Winery Visit', hint: 'Save a visit and its photos', icon: 'visit' },
 ]
@@ -217,6 +217,7 @@ function currentTarget(target: ManagementTarget | null, data: CellarData) {
   if (target.kind === 'winery') return { kind: 'winery' as const, record: data.wineries.find((item) => item.id === target.record.id) ?? target.record }
   if (target.kind === 'opening') return { kind: 'opening' as const, record: data.openings.find((item) => item.id === target.record.id) ?? target.record }
   if (target.kind === 'purchase') return { kind: 'purchase' as const, record: data.purchases.find((item) => item.id === target.record.id) ?? target.record }
+  if (target.kind === 'gift') return { kind: 'gift' as const, record: data.giftsGiven.find((item) => item.id === target.record.id) ?? target.record }
   return { kind: 'visit' as const, record: data.visits.find((item) => item.id === target.record.id) ?? target.record }
 }
 

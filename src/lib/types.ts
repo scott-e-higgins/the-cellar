@@ -11,6 +11,9 @@ export interface Snapshot {
   currentBottles: number
   recordedValue: number
   bottlesEnjoyed: number
+  purchasedBottles: number
+  giftsReceived: number
+  giftedAway: number
   wineriesRepresented: number
 }
 
