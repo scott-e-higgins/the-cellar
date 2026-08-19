@@ -17,3 +17,5 @@ export const supabase = isSupabaseConfigured
       },
     })
   : null
+
+export type CellarSupabaseClient = NonNullable<typeof supabase>
