@@ -215,6 +215,7 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   const { view, go } = useHashView()
   const [quickOpen, setQuickOpen] = useState(false)
   const [activeAction, setActiveAction] = useState<QuickAction | null>(null)
+  const [openingWineId, setOpeningWineId] = useState<string | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
   const [data, setData] = useState<CellarData>(EMPTY_CELLAR_DATA)
   const [dataLoading, setDataLoading] = useState(!preview)
@@ -249,12 +250,13 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   }, [refresh])
 
   const title = useMemo(() => ({ home: 'The Cellar', cellar: 'Our Cellar', wineries: 'Wineries', more: 'More' })[view], [view])
-  const startAction = (action: QuickAction) => {
+  const startAction = (action: QuickAction, wineId: string | null = null) => {
     setQuickOpen(false)
     if (household.role === 'viewer') {
       setDataError('This account has view-only access. An owner can change that in household membership.')
       return
     }
+    setOpeningWineId(action === 'open-bottle' ? wineId : null)
     setActiveAction(action)
   }
 
@@ -277,8 +279,8 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       </main>
       <BottomNav view={view} go={go} onQuick={() => setQuickOpen(true)} />
       {quickOpen && <QuickActions onClose={() => setQuickOpen(false)} onSelect={startAction} />}
-      {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} onClose={() => setActiveAction(null)} onSaved={refresh} />}
-      {managementTarget && <ManagementModal target={managementTarget} householdId={household.householdId} data={data} editable={household.role !== 'viewer'} onClose={() => setManagementTarget(null)} onSaved={refresh} onOpenBottle={() => { setManagementTarget(null); startAction('open-bottle') }} />}
+      {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} onClose={() => setActiveAction(null)} onSaved={refresh} />}
+      {managementTarget && <ManagementModal target={managementTarget} householdId={household.householdId} data={data} editable={household.role !== 'viewer'} onClose={() => setManagementTarget(null)} onSaved={refresh} onOpenBottle={() => { const wineId = managementTarget.kind === 'wine' ? managementTarget.record.id : null; setManagementTarget(null); startAction('open-bottle', wineId) }} />}
     </div>
   )
 }

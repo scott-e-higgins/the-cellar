@@ -16,5 +16,5 @@ export function StateSelect({ defaultValue = '', name = 'state', label = 'State'
   const selected = match?.[0] ?? defaultValue
   const legacyValue = selected && !US_STATES.some(([code]) => code === selected) ? selected : null
 
-  return <label>{label}<select name={name} defaultValue={selected}><option value="">Select a state</option>{legacyValue&&<option value={legacyValue}>{legacyValue}</option>}{US_STATES.map(([code,state])=><option key={code} value={code}>{state}</option>)}</select></label>
+  return <label>{label}<select name={name} defaultValue={selected}><option value="">Select a state</option>{legacyValue&&<option value={legacyValue}>{legacyValue}</option>}{US_STATES.map(([code])=><option key={code} value={code}>{code}</option>)}</select></label>
 }

@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import { createUniqueId } from './lib/unique-id'
 import type { QuickAction } from './lib/types'
 import { StateSelect } from './StateSelect'
+import { ClosureSelect } from './ClosureSelect'
 
 const LABELS: Record<QuickAction, string> = {
   'add-wine': 'Add Wine',
@@ -18,11 +19,6 @@ const localDate = () => {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
 }
 
-const localDateTime = () => {
-  const now = new Date()
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-}
-
 const optional = (form: FormData, name: string) => String(form.get(name) ?? '').trim() || null
 const numberOrNull = (form: FormData, name: string) => {
   const value = optional(form, name)
@@ -33,12 +29,14 @@ export function WorkflowModal({
   action,
   householdId,
   data,
+  initialWineId = null,
   onClose,
   onSaved,
 }: {
   action: QuickAction
   householdId: string
   data: CellarData
+  initialWineId?: string | null
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
@@ -124,13 +122,14 @@ export function WorkflowModal({
 
       if (action === 'open-bottle') {
         const [purchaseItemId, storageLocationId] = String(form.get('bottle_lot')).split('|')
+        const openedByChoice = optional(form, 'opened_by_choice')
         const reviews = data.people.map((person) => ({ person_id: person.id, rating: numberOrNull(form, `rating_${person.id}`), buy_again: optional(form, `buy_again_${person.id}`), tasting_notes: optional(form, `tasting_notes_${person.id}`) })).filter((review) => review.rating !== null || review.buy_again || review.tasting_notes)
         const { data: openingId, error } = await supabase.rpc('open_bottle_with_reviews', {
           p_household_id: householdId,
           p_purchase_item_id: purchaseItemId,
           p_storage_location_id: storageLocationId,
-          p_opened_by_person_id: optional(form, 'opened_by_person_id'),
-          p_opened_at: new Date(String(form.get('opened_at'))).toISOString(),
+          p_opened_by_person_id: openedByChoice === 'both' ? null : openedByChoice,
+          p_opened_at: new Date(`${String(form.get('opened_at'))}T12:00:00`).toISOString(),
           p_status: String(form.get('status')),
           p_enjoyed_with: optional(form, 'enjoyed_with'),
           p_occasion: optional(form, 'occasion'),
@@ -140,6 +139,10 @@ export function WorkflowModal({
           p_reviews: reviews,
         })
         if (error) throw error
+        if (openedByChoice === 'both') {
+          const both = await supabase.from('openings').update({ opened_by_both: true }).eq('household_id', householdId).eq('id', openingId)
+          if (both.error) nonBlockingWarning = `The opening was saved, but “Both” could not be recorded: ${both.error.message}`
+        }
         const photo = form.get('photo')
         if (photo instanceof File && photo.size > 0) {
           const cleanName = photo.name.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -186,7 +189,7 @@ export function WorkflowModal({
           {action === 'add-winery' && <WineryFields />}
           {action === 'add-wine' && <WineFields data={data} />}
           {action === 'record-purchase' && <PurchaseFields data={data} />}
-          {action === 'open-bottle' && <OpeningFields data={data} />}
+          {action === 'open-bottle' && <OpeningFields data={data} initialWineId={initialWineId} />}
           {action === 'add-winery-visit' && <VisitFields data={data} />}
           {message && <p className="form-message error" role="alert">{message}</p>}
           <div className="form-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary-button" disabled={busy || blocked}>{busy ? 'Saving…' : 'Save'}</button></div>
@@ -209,7 +212,7 @@ function WineryFields() {
 }
 
 function WineFields({ data }: { data: CellarData }) {
-  return <><label>Winery<select name="winery_id"><option value="">No winery selected</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Wine name" name="name" required /><div className="field-grid"><Field label="Vintage" name="vintage" type="number" min="1800" /><label className="check-field paired-check-field"><input name="non_vintage" type="checkbox" /> Non-vintage</label><Field label="Style" name="style" placeholder="Still, sparkling…" /><Field label="Category" name="category" placeholder="Red, white, rosé…" /><Field label="Sweetness" name="sweetness" /><Field label="Closure" name="closure" /></div><Field label="Country" name="country" /><StateSelect /><Field label="Vineyard" name="vineyard" /><Field label="Varietal or blend" name="blend_description" /><Notes label="Official winery notes" name="official_winery_notes"/><Notes label="Our notes" name="notes" /></>
+  return <><label>Winery<select name="winery_id"><option value="">No winery selected</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Wine name" name="name" required /><div className="field-grid"><Field label="Vintage" name="vintage" type="number" min="1800" /><label className="check-field paired-check-field"><input name="non_vintage" type="checkbox" /> Non-vintage</label><Field label="Style" name="style" placeholder="Still, sparkling…" /><Field label="Category" name="category" placeholder="Red, white, rosé…" /><Field label="Sweetness" name="sweetness" /><ClosureSelect /></div><Field label="Country" name="country" /><StateSelect /><Field label="Vineyard" name="vineyard" /><Field label="Varietal or blend" name="blend_description" /><Notes label="Official winery notes" name="official_winery_notes"/><Notes label="Our notes" name="notes" /></>
 }
 
 function PurchaseFields({ data }: { data: CellarData }) {
@@ -217,9 +220,13 @@ function PurchaseFields({ data }: { data: CellarData }) {
   return <><label>Wine<select name="wine_id" required defaultValue=""><option value="" disabled>Select a wine</option>{data.wines.map((wine) => <option key={wine.id} value={wine.id}>{wine.wineryName ? `${wine.wineryName} · ` : ''}{wine.nonVintage ? 'NV' : wine.vintage ?? 'Unknown vintage'} · {wine.name}</option>)}</select></label><div className="field-grid"><Field label="Purchase date" name="acquisition_date" type="date" defaultValue={localDate()} required /><Field label="Quantity" name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" required /></div><label>Put bottles in<select name="storage_location_id" required defaultValue=""><option value="" disabled>Select a location</option>{data.locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label><Field label="Purchased at" name="purchase_location" /><div className="field-grid"><Field label="Price per bottle" name="unit_price" type="number" min="0" step="0.01" /><Field label="Current value per bottle" name="current_value_per_bottle" type="number" min="0" step="0.01" /><Field label="Tax" name="tax" type="number" min="0" step="0.01" /><Field label="Discount" name="discount" type="number" min="0" step="0.01" /><Field label="Final total" name="total_cost" type="number" min="0" step="0.01" /></div><PersonSelect name="purchased_by_person_id" label="Purchased by" data={data} /><PersonSelect name="selected_by_person_id" label="Selected by" data={data} /><Notes /></>
 }
 
-function OpeningFields({ data }: { data: CellarData }) {
+function OpeningFields({ data, initialWineId }: { data: CellarData; initialWineId: string | null }) {
   if (!data.bottleLots.length) return <Prerequisite message="There are no available bottles to open." />
-  return <><label>Bottle and location<select name="bottle_lot" required defaultValue=""><option value="" disabled>Select an available bottle</option>{data.bottleLots.map((lot) => <option key={`${lot.purchaseItemId}-${lot.storageLocationId}`} value={`${lot.purchaseItemId}|${lot.storageLocationId}`}>{lot.wineLabel} · {lot.storageLocationName} ({lot.quantity})</option>)}</select></label><div className="field-grid"><Field label="Opened at" name="opened_at" type="datetime-local" defaultValue={localDateTime()} required /><label>Status<select name="status" defaultValue="finished"><option value="finished">Finished</option><option value="open">Still open</option></select></label></div><PersonSelect name="opened_by_person_id" label="Opened by" data={data} /><Field label="Enjoyed with" name="enjoyed_with" /><Field label="Occasion" name="occasion" /><Notes label="Memory notes" name="memory_notes" /><h3 className="form-section-title">What did everyone think?</h3>{data.people.map(person=><fieldset className="preference-card" key={person.id}><legend>{person.displayName}</legend><label>Rating<select name={`rating_${person.id}`}><option value="">Not rated</option>{[5,4.5,4,3.5,3,2.5,2,1.5,1,.5].map(v=><option key={v} value={v}>{v} / 5</option>)}</select></label><label>Buy again<select name={`buy_again_${person.id}`}><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label>Personal tasting notes<textarea name={`tasting_notes_${person.id}`} rows={2}/></label></fieldset>)}<label className="photo-picker"><span className="photo-picker-icon" aria-hidden="true">📷</span><span><strong>Opening photo</strong><small>Tap to take or choose a photo</small></span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment"/></label><Field label="Photo caption" name="photo_caption"/><label>Issue<select name="issue_type"><option value="">No issue</option><option value="cork_failed">Cork failed</option><option value="corked">Corked</option><option value="oxidized">Oxidized</option><option value="other">Other</option></select></label><Notes label="Issue notes" name="issue_notes" /></>
+  const selectedLot = data.bottleLots.find((lot) => lot.wineId === initialWineId)
+  const defaultLot = selectedLot ? `${selectedLot.purchaseItemId}|${selectedLot.storageLocationId}` : ''
+  const kayla = data.people.find((person) => person.displayName.toLowerCase() === 'kayla')
+  const scott = data.people.find((person) => person.displayName.toLowerCase() === 'scott')
+  return <><label>Bottle and location<select name="bottle_lot" required defaultValue={defaultLot}><option value="" disabled>Select an available bottle</option>{data.bottleLots.map((lot) => <option key={`${lot.purchaseItemId}-${lot.storageLocationId}`} value={`${lot.purchaseItemId}|${lot.storageLocationId}`}>{lot.wineLabel} · {lot.storageLocationName} ({lot.quantity})</option>)}</select></label><div className="field-grid"><Field label="Opening date" name="opened_at" type="date" defaultValue={localDate()} required /><label>Status<select name="status" defaultValue="finished"><option value="finished">Finished</option><option value="open">Still open</option></select></label></div><label>Opened by<select name="opened_by_choice"><option value="">Not specified</option>{kayla&&<option value={kayla.id}>Kayla</option>}{scott&&<option value={scott.id}>Scott</option>}<option value="both">Both</option></select></label><Field label="Enjoyed with" name="enjoyed_with" /><Field label="Occasion" name="occasion" /><Notes label="Memory notes" name="memory_notes" /><h3 className="form-section-title">What did everyone think?</h3>{data.people.map(person=><fieldset className="preference-card" key={person.id}><legend>{person.displayName}</legend><label>Rating<select name={`rating_${person.id}`}><option value="">Not rated</option>{[5,4.5,4,3.5,3,2.5,2,1.5,1,.5].map(v=><option key={v} value={v}>{v} / 5</option>)}</select></label><label>Buy again<select name={`buy_again_${person.id}`}><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label>Personal tasting notes<textarea name={`tasting_notes_${person.id}`} rows={2}/></label></fieldset>)}<label className="photo-picker"><span className="photo-picker-icon" aria-hidden="true">📷</span><span><strong>Opening photo</strong><small>Tap to take or choose a photo</small></span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment"/></label><Field label="Photo caption" name="photo_caption"/><label>Issue<select name="issue_type"><option value="">No issue</option><option value="cork_failed">Cork failed</option><option value="corked">Corked</option><option value="oxidized">Oxidized</option><option value="other">Other</option></select></label><Notes label="Issue notes" name="issue_notes" /></>
 }
 
 function VisitFields({ data }: { data: CellarData }) {
