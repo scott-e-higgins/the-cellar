@@ -217,6 +217,14 @@ body::before {
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .check-field { align-content: center; grid-template-columns: auto 1fr; align-items: center; min-height: 48px; padding: 11px; border: 1px solid #d6c7b0; border-radius: 7px; background: #f7efdf; }
 .check-field input { width: 18px; height: 18px; accent-color: var(--burgundy); }
+.paired-check-field { align-self: end; min-height: 42px; }
+.paired-check-field input { width: 22px; height: 22px; }
+.photo-picker { position: relative; grid-template-columns: 48px minmax(0, 1fr); align-items: center; min-height: 72px; padding: 11px 13px; border: 1px dashed var(--brass); border-radius: 8px; color: var(--burgundy); background: #f7ecdb; cursor: pointer; }
+.photo-picker-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: var(--ivory); font-size: 22px; }
+.photo-picker strong, .photo-picker small { display: block; }
+.photo-picker strong { font-size: 14px; }
+.photo-picker small { margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.workflow-form .photo-picker input { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; }
 .form-actions { position: sticky; bottom: -23px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 5px -7px -8px; padding: 14px 7px 8px; background: linear-gradient(transparent, var(--paper) 20%); }
 .prerequisite { padding: 18px; border: 1px solid #d9c69f; border-radius: 8px; background: #f3e6c7; }
 .prerequisite strong { color: var(--burgundy); }
@@ -239,8 +247,12 @@ body::before {
 .upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .workflow-form hr { width: 100%; border: 0; border-top: 1px solid var(--line); }
 .detail-hero { display: grid; justify-items: center; gap: 7px; margin: 18px 0; padding: 18px; text-align: center; border: 1px solid var(--line); border-radius: 8px; background: var(--ivory); }
-.detail-hero > div { width: min(100%, 290px); height: 210px; display: grid; place-items: center; overflow: hidden; color: var(--burgundy); background: linear-gradient(145deg,#f4e8d5,#ead6b7); font-size: 54px; }
+.detail-hero > div, .photo-tap-target { width: min(100%, 290px); height: 210px; display: grid; place-items: center; overflow: hidden; color: var(--burgundy); background: linear-gradient(145deg,#f4e8d5,#ead6b7); font-size: 54px; }
 .detail-hero img { width: 100%; height: 100%; object-fit: cover; }
+.photo-tap-target { position: relative; cursor: pointer; }
+.photo-tap-target input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.photo-tap-copy { position: absolute; right: 9px; bottom: 9px; left: 9px; padding: 8px 10px; border-radius: 6px; color: white; background: rgba(74,16,35,.88); font-size: 11px; font-weight: 700; }
+.photo-placeholder { font-size: 54px; }
 .detail-hero p { margin: 0; color: var(--muted); }
 .detail-hero > strong { color: var(--burgundy); }
 .gallery { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 15px 0; }
