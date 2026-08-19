@@ -12,7 +12,7 @@ The source repository is intentionally public, consistent with the existing Trav
 
 ## Status
 
-The active development build includes authentication, Home, inventory search and filters, wine and winery detail/editing, acquisition and movement history, configurable storage, atomic bottle opening with personal reviews, visits, private photos, private receipts/documents, favorites, gift tracking, statistics, PWA behavior, and future Travel Journal reference architecture.
+The active development build includes authentication, Home, inventory search and filters, wine and winery detail/editing, acquisition and movement history, configurable storage, atomic bottle opening with personal reviews, visits, private photos, private receipts/documents, favorites, gift tracking, statistics, sourced online wine/winery enrichment with a review queue, PWA behavior, and future Travel Journal reference architecture.
 
 The approved historical spreadsheet import has been completed in production. Private inventory records and import payloads are not stored in this repository. Demo records are never compiled into the default build.
 
@@ -41,6 +41,8 @@ The independent project has been provisioned and all files in `supabase/migratio
 3. Create the household members' Auth users in the dashboard.
 4. Copy `supabase/seed.example.sql`, replace all placeholder UUIDs, and run the edited statements once.
 5. Confirm each account can see the household and that no unauthenticated request can read its rows or private files.
+
+Online enrichment runs only in the authenticated `enrich-record` Edge Function. Configure `OPENAI_API_KEY` as a Supabase Edge Function secret and optionally set `ENRICHMENT_MODEL` (the cost-controlled default is `gpt-5.6-luna`). Never place either value in `VITE_*`, the browser bundle, or this repository. The function stores accepted information, provenance, attempt status, and usage metadata so completed/no-match records are not searched repeatedly.
 
 The example seed adds generic configurable top-level storage locations. They are data, not hard-coded UI rules.
 
