@@ -5,6 +5,7 @@ import { ManagementModal, type ManagementTarget } from './ManagementModal'
 import { EMPTY_CELLAR_DATA, loadCellarData, type CellarData, type WineRecord, type WineryRecord } from './lib/cellar-data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { HouseholdContext, NavView, QuickAction } from './lib/types'
+import { APP_VERSION } from './version'
 
 const QUICK_ACTIONS: Array<{ id: QuickAction; label: string; hint: string; icon: IconName }> = [
   { id: 'add-wine', label: 'Add Wine', hint: 'Create a wine definition', icon: 'bottle' },
@@ -450,7 +451,7 @@ function MoreView({ household, onSignOut, onManage }: { household: HouseholdCont
       <section className="account-card brass-corners"><BrandMark/><div><p className="eyebrow">CONNECTED COLLECTION</p><h2>{household.displayName}</h2><p>{household.role === 'owner' ? 'Owner' : household.role === 'editor' ? 'Full access' : 'View only'}</p></div></section>
       <div className="more-list">{MORE_LINKS.map((item) => <button key={item.label} onClick={() => onManage({ kind: MORE_TARGETS[item.label] } as ManagementTarget)}><span className="more-icon"><Icon name={item.icon}/></span><span><strong>{item.label}</strong><small>{item.detail}</small></span><Icon name="chevron" size={18}/></button>)}</div>
       <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
-      <p className="version-label">The Cellar v1.0.0</p>
+      <footer className="version-label"><strong>The Cellar</strong><span>Version {APP_VERSION}</span></footer>
     </div>
   )
 }
