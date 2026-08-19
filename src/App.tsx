@@ -141,7 +141,7 @@ function AuthBoundary() {
         .eq('user_id', nextSession.user.id)
         .maybeSingle()
       if (error || !data) {
-        setMembershipError(error?.message || 'This account has not been added to a Cellar household yet.')
+        setMembershipError(error?.message || 'This account does not have access to The Cellar.')
       } else {
         const related = data.households as unknown as { name?: string } | null
         setHousehold({
