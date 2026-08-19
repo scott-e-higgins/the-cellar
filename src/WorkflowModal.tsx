@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react'
 import type { CellarData } from './lib/cellar-data'
 import { supabase } from './lib/supabase'
+import { createUniqueId } from './lib/unique-id'
 import type { QuickAction } from './lib/types'
 
 const LABELS: Record<QuickAction, string> = {
@@ -143,7 +144,7 @@ export function WorkflowModal({
         const photo = form.get('photo')
         if (photo instanceof File && photo.size > 0) {
           const cleanName = photo.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-          const storagePath = `${householdId}/openings/${openingId}/${crypto.randomUUID()}-${cleanName}`
+          const storagePath = `${householdId}/openings/${openingId}/${createUniqueId()}-${cleanName}`
           const upload = await supabase.storage.from('cellar-photos').upload(storagePath, photo, { contentType: photo.type, upsert: false })
           if (upload.error) nonBlockingWarning = `The opening was saved, but the photo was not uploaded: ${upload.error.message}`
           else {
