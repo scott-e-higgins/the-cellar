@@ -18,3 +18,6 @@ enable_signup = false
 [storage]
 enabled = true
 file_size_limit = "25MiB"
+
+[functions.enrich-record]
+verify_jwt = true
