@@ -520,6 +520,9 @@ button:not(:disabled):active { transform: translateY(1px); }
 .enrichment-counts span { color: var(--muted); font-size: 9px; line-height: 1.2; text-align: center; }
 .batch-progress { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
 .enrichment-list { display: grid; gap: var(--space-2); }
+.batch-job-status { display: grid; gap: var(--space-2); border: 1px solid var(--brass); border-radius: var(--radius); padding: var(--space-3); background: var(--ivory); }
+.batch-job-status strong { color: var(--burgundy); }
+.batch-job-status span { color: var(--muted); font-size: 13px; }
 .enrichment-list > button { min-height: 62px; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-3); color: var(--charcoal); background: var(--ivory); text-align: left; }
 .enrichment-list strong, .enrichment-list small { display: block; }
 .enrichment-list small { max-width: 48ch; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }

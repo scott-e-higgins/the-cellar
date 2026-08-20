@@ -131,22 +131,30 @@ Deno.serve(async (request: Request) => {
   if (authError || !authData.user) return Response.json({ error: "Sign in is required." }, { status: 401, headers: corsHeaders });
 
   try {
-    const body = await request.json() as { action?: string; entityKind?: EntityKind; entityId?: string; force?: boolean; householdId?: string; limit?: number };
+    const body = await request.json() as { action?: string; entityKind?: EntityKind; entityId?: string; force?: boolean; householdId?: string; jobId?: string };
+    if (body.action === "continue_batch") {
+      if (!body.jobId) throw new Error("A background job is required.");
+      const { data: job } = await client.from("enrichment_jobs").select("*").eq("id", body.jobId).eq("status", "running").maybeSingle();
+      if (!job) return Response.json({ running: false }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      EdgeRuntime.waitUntil(processJobStep(client, authorization, job as JsonObject));
+      return Response.json({ running: true, jobId: job.id }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     if (body.action === "batch") {
       if (!body.householdId || (body.entityKind !== "wine" && body.entityKind !== "winery")) throw new Error("A household and record type are required.");
       const { data: membership } = await client.from("household_members").select("role").eq("household_id", body.householdId).eq("user_id", authData.user.id).single();
       if (!membership || !["owner", "editor"].includes(membership.role)) return Response.json({ error: "Full household access is required." }, { status: 403, headers: corsHeaders });
-      const table = body.entityKind === "wine" ? "wines" : "wineries";
-      const idColumn = body.entityKind === "wine" ? "wine_id" : "winery_id";
-      const limit = Math.max(1, Math.min(Number(body.limit) || 3, 5));
-      const { data: records, error } = await client.from(table).select("id").eq("household_id", body.householdId).order("created_at").limit(500);
-      if (error) throw error;
-      const { data: attempts } = await client.from("enrichment_attempts").select(idColumn).eq("household_id", body.householdId).not(idColumn, "is", null);
-      const attempted = new Set((attempts ?? []).map((row: JsonObject) => String(row[idColumn])));
-      const ids = (records ?? []).map((row: JsonObject) => String(row.id)).filter((id: string) => !attempted.has(id)).slice(0, limit);
-      const results = [];
-      for (const entityId of ids) results.push(await enrichOne(client, authData.user.id, body.entityKind, entityId, "batch", false));
-      return Response.json({ processed: results.length, remaining: Math.max(0, (records?.length ?? 0) - attempted.size - results.length), results }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data: existing } = await client.from("enrichment_jobs").select("*").eq("household_id", body.householdId).eq("entity_kind", body.entityKind).eq("status", "running").maybeSingle();
+      if (existing) return Response.json({ started: false, jobId: existing.id, remaining: existing.remaining_count }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const table = body.entityKind === "wine" ? "wines" : "wineries", idColumn = body.entityKind === "wine" ? "wine_id" : "winery_id";
+      const [{ count: total }, { count: attempted }] = await Promise.all([
+        client.from(table).select("id", { count: "exact", head: true }).eq("household_id", body.householdId),
+        client.from("enrichment_attempts").select("id", { count: "exact", head: true }).eq("household_id", body.householdId).not(idColumn, "is", null),
+      ]);
+      const remaining = Math.max(0, (total ?? 0) - (attempted ?? 0));
+      const { data: job, error: jobError } = await client.from("enrichment_jobs").insert({ household_id: body.householdId, entity_kind: body.entityKind, created_by: authData.user.id, remaining_count: remaining, status: remaining ? "running" : "completed", completed_at: remaining ? null : new Date().toISOString() }).select("*").single();
+      if (jobError || !job) throw jobError ?? new Error("Could not start background enrichment.");
+      if (remaining) EdgeRuntime.waitUntil(processJobStep(client, authorization, job as JsonObject));
+      return Response.json({ started: Boolean(remaining), jobId: job.id, remaining }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (body.entityKind !== "wine" && body.entityKind !== "winery") throw new Error("Choose a wine or winery.");
     if (!body.entityId) throw new Error("A record is required.");
@@ -157,6 +165,45 @@ Deno.serve(async (request: Request) => {
     return Response.json({ error: message }, { status: message.includes("configured") ? 503 : 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
+
+async function continueJob(authorization: string, jobId: string, delayMs = 0) {
+  if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/enrich-record`;
+  const publishable = (() => { const values = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"); if (values) { try { return JSON.parse(values).default as string; } catch { /* fallback */ } } return Deno.env.get("SUPABASE_ANON_KEY")!; })();
+  const response = await fetch(url, { method: "POST", headers: { Authorization: authorization, apikey: publishable, "Content-Type": "application/json" }, body: JSON.stringify({ action: "continue_batch", jobId }) });
+  if (!response.ok) throw new Error(`Could not continue background enrichment (${response.status}).`);
+}
+
+async function processJobStep(client: ReturnType<typeof createClient>, authorization: string, job: JsonObject) {
+  const kind = job.entity_kind as EntityKind, table = kind === "wine" ? "wines" : "wineries", idColumn = kind === "wine" ? "wine_id" : "winery_id";
+  try {
+    const [{ data: records, error: recordsError }, { data: attempts, error: attemptsError }] = await Promise.all([
+      client.from(table).select("id").eq("household_id", job.household_id).order("created_at").limit(500),
+      client.from("enrichment_attempts").select(idColumn).eq("household_id", job.household_id).not(idColumn, "is", null),
+    ]);
+    if (recordsError || attemptsError) throw recordsError ?? attemptsError;
+    const attempted = new Set((attempts ?? []).map((row: JsonObject) => String(row[idColumn])));
+    const next = (records ?? []).find((row: JsonObject) => !attempted.has(String(row.id)));
+    const remainingBefore = Math.max(0, (records?.length ?? 0) - attempted.size);
+    if (!next) {
+      await client.from("enrichment_jobs").update({ status: "completed", remaining_count: 0, completed_at: new Date().toISOString() }).eq("id", job.id);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5500));
+    let failed = false;
+    try { await enrichOne(client, String(job.created_by), kind, String(next.id), "batch", false); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : "Enrichment failed.";
+      if (message.includes("rate limit")) { await continueJob(authorization, String(job.id), 10_000); return; }
+      failed = true;
+    }
+    await client.from("enrichment_jobs").update({ processed_count: Number(job.processed_count ?? 0) + 1, failed_count: Number(job.failed_count ?? 0) + (failed ? 1 : 0), remaining_count: Math.max(0, remainingBefore - 1), failure_reason: failed ? "One or more records could not be enriched." : null }).eq("id", job.id);
+    await continueJob(authorization, String(job.id));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Background enrichment stopped.";
+    await client.from("enrichment_jobs").update({ status: "failed", failure_reason: message.slice(0, 500), completed_at: new Date().toISOString() }).eq("id", job.id);
+  }
+}
 
 async function enrichOne(client: ReturnType<typeof createClient>, userId: string, kind: EntityKind, entityId: string, attemptType: AttemptType, force: boolean) {
   const table = kind === "wine" ? "wines" : "wineries";

@@ -92,17 +92,14 @@ export function EnrichmentDashboard({ householdId, data, editable, onSaved, onNa
   const records = kind === 'wine' ? data.wines : data.wineries
   const counts = Object.fromEntries(['enriched', 'ready_for_review', 'no_match', 'not_searched', 'failed'].map((status) => [status, records.filter((record) => statusFor(kind, record.id, data, latest) === status).length]))
   const visible = records.filter((record) => filter === 'all' || statusFor(kind, record.id, data, latest) === filter)
+  const runningJob = data.enrichmentJobs.find((job) => job.entityKind === kind && job.status === 'running')
   const runBatch = async () => {
     if (!supabase || !editable) return
-    setBusy(true); let processed = 0; let remaining = counts.not_searched
-    while (remaining > 0 && processed < 250) {
-      setProgress(`Processed ${processed} · ${remaining} remaining`)
-      const result = await supabase.functions.invoke('enrich-record', { body: { action: 'batch', householdId, entityKind: kind, limit: 5 } })
-      if (result.error) { setProgress(result.error.message); break }
-      const batch = Number(result.data?.processed ?? 0); processed += batch; remaining = Number(result.data?.remaining ?? 0)
-      if (!batch) break
-    }
-    await onSaved(); setProgress(remaining ? `Paused after ${processed}. ${remaining} remain.` : `Completed ${processed} ${kind === 'wine' ? 'wines' : 'wineries'}.`); setBusy(false)
+    setBusy(true); setProgress('Starting secure background enrichment…')
+    const result = await supabase.functions.invoke('enrich-record', { body: { action: 'batch', householdId, entityKind: kind } })
+    if (result.error) setProgress(result.error.message)
+    else setProgress('Running in the background. You can close the app or let your phone sleep.')
+    await onSaved(); setBusy(false)
   }
-  return <div className="enrichment-dashboard"><div className="choice-toggle enrichment-kind"><button className={kind === 'wine' ? 'selected' : ''} onClick={() => { setKind('wine'); setFilter('all') }}>Wines</button><button className={kind === 'winery' ? 'selected' : ''} onClick={() => { setKind('winery'); setFilter('all') }}>Wineries</button></div><div className="enrichment-counts">{Object.entries(counts).map(([status, count]) => <button className={filter === status ? 'active' : ''} key={status} onClick={() => setFilter(filter === status ? 'all' : status)}><strong>{count}</strong><span>{STATUS_LABELS[status]}</span></button>)}</div>{editable && counts.not_searched > 0 && <button className="primary-button full-button" disabled={busy} onClick={() => void runBatch()}>{busy ? 'Enriching collection…' : `Enrich ${counts.not_searched} unsearched ${kind === 'wine' ? 'wines' : 'wineries'}`}</button>}{progress && <p className="batch-progress">{progress}</p>}<div className="enrichment-list">{visible.map((record) => { const status = statusFor(kind, record.id, data, latest); const attempt = latest.get(record.id); return <button key={record.id} onClick={() => onNavigate(kind, record.id)}><span><strong>{record.name}</strong><small>{attempt?.failureReason || attempt?.matchExplanation || STATUS_LABELS[status]}</small></span><span className={`status-dot ${status}`}>{STATUS_LABELS[status]}</span></button> })}</div></div>
+  return <div className="enrichment-dashboard"><div className="choice-toggle enrichment-kind"><button className={kind === 'wine' ? 'selected' : ''} onClick={() => { setKind('wine'); setFilter('all') }}>Wines</button><button className={kind === 'winery' ? 'selected' : ''} onClick={() => { setKind('winery'); setFilter('all') }}>Wineries</button></div><div className="enrichment-counts">{Object.entries(counts).map(([status, count]) => <button className={filter === status ? 'active' : ''} key={status} onClick={() => setFilter(filter === status ? 'all' : status)}><strong>{count}</strong><span>{STATUS_LABELS[status]}</span></button>)}</div>{runningJob && <div className="batch-job-status"><strong>Enrichment is running in the background</strong><span>{runningJob.processedCount} completed · {runningJob.remainingCount} remaining</span><button className="secondary-button" onClick={() => void onSaved()}>Refresh status</button></div>}{editable && counts.not_searched > 0 && !runningJob && <button className="primary-button full-button" disabled={busy} onClick={() => void runBatch()}>{busy ? 'Starting…' : `Enrich ${counts.not_searched} unsearched ${kind === 'wine' ? 'wines' : 'wineries'}`}</button>}{progress && <p className="batch-progress">{progress}</p>}<div className="enrichment-list">{visible.map((record) => { const status = statusFor(kind, record.id, data, latest); const attempt = latest.get(record.id); return <button key={record.id} onClick={() => onNavigate(kind, record.id)}><span><strong>{record.name}</strong><small>{attempt?.failureReason || attempt?.matchExplanation || STATUS_LABELS[status]}</small></span><span className={`status-dot ${status}`}>{STATUS_LABELS[status]}</span></button> })}</div></div>
 }
