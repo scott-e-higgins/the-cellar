@@ -7,6 +7,9 @@ import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { HouseholdContext, NavView, QuickAction } from './lib/types'
 import { APP_VERSION } from './version'
 import { userError } from './lib/user-error'
+import { OVERLAY_Z_INDEX } from './lib/interaction'
+import { LightboxLayer, ModalLayer } from './OverlayLayer'
+import { restoredManagementStack } from './lib/overlay-history'
 
 const QUICK_ACTIONS: Array<{ id: QuickAction; label: string; hint: string; icon: IconName }> = [
   { id: 'add-wine', label: 'Add Wine', hint: 'Create a wine definition', icon: 'bottle' },
@@ -242,11 +245,11 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   useEffect(() => {
     window.history.replaceState({ ...window.history.state, cellarOverlay: null }, '')
     const restoreOverlay = (state: unknown) => {
-      const overlay = (state as { cellarOverlay?: { type?: string; stack?: ManagementTarget[]; action?: QuickAction; wineId?: string | null; photo?: PhotoRecord } } | null)?.cellarOverlay
+      const overlay = (state as { cellarOverlay?: { type?: string; stack?: ManagementTarget[]; underlayStack?: ManagementTarget[]; action?: QuickAction; wineId?: string | null; photo?: PhotoRecord } } | null)?.cellarOverlay
       setQuickOpen(overlay?.type === 'quick')
       setActiveAction(overlay?.type === 'action' ? overlay.action ?? null : null)
       setOpeningWineId(overlay?.type === 'action' ? overlay.wineId ?? null : null)
-      setManagementStack(overlay?.type === 'management' ? overlay.stack ?? [] : [])
+      setManagementStack(restoredManagementStack(overlay))
       setCardPhoto(overlay?.type === 'card-photo' ? overlay.photo ?? null : null)
     }
     const onPopState = (event: PopStateEvent) => restoreOverlay(event.state)
@@ -271,15 +274,6 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
     const timer = window.setTimeout(() => setToast(null), 3200)
     return () => window.clearTimeout(timer)
   }, [toast])
-
-  useEffect(() => {
-    if (!overlayOpen) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') window.history.back()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [overlayOpen])
 
   const pushOverlay = (cellarOverlay: object) => window.history.pushState({ ...window.history.state, cellarOverlay }, '')
   const openManagement = (target: ManagementTarget) => { const stack = [target]; setManagementStack(stack); pushOverlay({ type: 'management', stack }) }
@@ -332,7 +326,7 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       setDataError('This account has view-only access. An owner can change that in household membership.')
       return
     }
-    const overlay = { type: 'action', action, wineId: action === 'open-bottle' ? wineId : null }
+    const overlay = { type: 'action', action, wineId: action === 'open-bottle' ? wineId : null, underlayStack: managementStack }
     if (quickOpen) window.history.replaceState({ ...window.history.state, cellarOverlay: overlay }, '')
     else pushOverlay(overlay)
     setQuickOpen(false)
@@ -359,9 +353,9 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       <BottomNav view={view} go={go} onQuick={() => { setQuickOpen(true); pushOverlay({ type: 'quick' }) }} />
       {quickOpen && <QuickActions onClose={() => window.history.back()} onSelect={startAction} />}
       {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
-      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onSaved={refresh} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
+      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
       {cardPhoto && <CardPhotoViewer photo={cardPhoto} url={photoUrls[cardPhoto.id]} onClose={() => window.history.back()} />}
-      {toast && <div className={`app-toast ${toast.tone}`} role="status">{toast.message}</div>}
+      {toast && <div className={`app-toast ${toast.tone}`} style={{ zIndex: OVERLAY_Z_INDEX.toast }} role="status">{toast.message}</div>}
     </div>
   )
 }
@@ -495,7 +489,7 @@ function WineryCard({ winery, hasPhoto, photoUrl, onOpen }: { winery: WineryReco
 }
 
 function CardPhotoViewer({ photo, url, onClose }: { photo: PhotoRecord; url?: string; onClose: () => void }) {
-  return <div className="photo-viewer" role="dialog" aria-modal="true" aria-label="Photo viewer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><button className="photo-viewer-close" onClick={onClose} aria-label="Close photo">×</button><figure>{url ? <img src={url} alt={photo.caption ?? 'Cellar photo'} /> : <p className="photo-viewer-loading">Loading photo…</p>}{photo.caption && <figcaption>{photo.caption}</figcaption>}</figure></div>
+  return <LightboxLayer ariaLabel="Photo viewer" onDismiss={onClose}><button className="photo-viewer-close" onClick={onClose} aria-label="Close photo">×</button><figure>{url ? <img src={url} alt={photo.caption ?? 'Cellar photo'} /> : <p className="photo-viewer-loading">Loading photo…</p>}{photo.caption && <figcaption>{photo.caption}</figcaption>}</figure></LightboxLayer>
 }
 
 const MORE_LINKS: Array<{ icon: IconName; label: string; detail: string }> = [
@@ -542,12 +536,10 @@ function NavButton({ item, active, onClick }: { item: { label: string; icon: Ico
 
 function QuickActions({ onClose, onSelect }: { onClose: () => void; onSelect: (action: QuickAction) => void }) {
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="action-sheet" role="dialog" aria-modal="true" aria-labelledby="quick-title">
+    <ModalLayer layer="action" onDismiss={onClose} surfaceClassName="action-sheet" ariaLabelledBy="quick-title">
         <div className="sheet-handle"/><div className="sheet-header"><div><p className="eyebrow burgundy">QUICK ACTIONS</p><h2 id="quick-title">Add something</h2></div><button className="icon-close" onClick={onClose} aria-label="Close"><Icon name="close"/></button></div>
         <div className="action-list">{QUICK_ACTIONS.map((action) => <button key={action.id} onClick={() => onSelect(action.id)}><span><Icon name={action.icon}/></span><span><strong>{action.label}</strong><small>{action.hint}</small></span><Icon name="chevron" size={18}/></button>)}</div>
-      </section>
-    </div>
+    </ModalLayer>
   )
 }
 
