@@ -5,6 +5,7 @@ import { createUniqueId } from './lib/unique-id'
 import type { QuickAction } from './lib/types'
 import { StateSelect } from './StateSelect'
 import { ClosureSelect } from './ClosureSelect'
+import { userError, validatePhoto } from './lib/user-error'
 
 const LABELS: Record<QuickAction, string> = {
   'add-wine': 'Add Wine',
@@ -32,6 +33,7 @@ export function WorkflowModal({
   initialWineId = null,
   onClose,
   onSaved,
+  onNotice,
 }: {
   action: QuickAction
   householdId: string
@@ -39,6 +41,7 @@ export function WorkflowModal({
   initialWineId?: string | null
   onClose: () => void
   onSaved: () => Promise<void>
+  onNotice: (message: string, tone?: 'success' | 'warning') => void
 }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -159,13 +162,14 @@ export function WorkflowModal({
         }
         const photo = form.get('photo')
         if (photo instanceof File && photo.size > 0) {
+          validatePhoto(photo)
           const cleanName = photo.name.replace(/[^a-zA-Z0-9._-]/g, '_')
           const storagePath = `${householdId}/openings/${openingId}/${createUniqueId()}-${cleanName}`
           const upload = await supabase.storage.from('cellar-photos').upload(storagePath, photo, { contentType: photo.type, upsert: false })
-          if (upload.error) nonBlockingWarning = `The opening was saved, but the photo was not uploaded: ${upload.error.message}`
+          if (upload.error) nonBlockingWarning = 'The opening was saved, but its photo could not be uploaded. You can add it from the opening later.'
           else {
             const saved = await supabase.from('photos').insert({ household_id: householdId, opening_id: openingId, storage_path: storagePath, original_filename: photo.name, mime_type: photo.type, file_size_bytes: photo.size, caption: optional(form, 'photo_caption') })
-            if (saved.error) { await supabase.storage.from('cellar-photos').remove([storagePath]); nonBlockingWarning = `The opening was saved, but the photo record failed: ${saved.error.message}` }
+            if (saved.error) { await supabase.storage.from('cellar-photos').remove([storagePath]); nonBlockingWarning = 'The opening was saved, but its photo could not be attached. You can add it from the opening later.' }
           }
         }
         }
@@ -185,9 +189,9 @@ export function WorkflowModal({
 
       await onSaved()
       onClose()
-      if (nonBlockingWarning) window.alert(nonBlockingWarning)
+      onNotice(nonBlockingWarning || `${LABELS[action]} saved.`, nonBlockingWarning ? 'warning' : 'success')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'The record could not be saved.')
+      setMessage(userError(error, 'The record could not be saved. Please try again.'))
     } finally {
       setBusy(false)
     }
