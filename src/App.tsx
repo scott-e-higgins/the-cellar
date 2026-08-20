@@ -227,7 +227,6 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   const [quickOpen, setQuickOpen] = useState(false)
   const [activeAction, setActiveAction] = useState<QuickAction | null>(null)
   const [openingWineId, setOpeningWineId] = useState<string | null>(null)
-  const [updateReady, setUpdateReady] = useState(false)
   const [data, setData] = useState<CellarData>(EMPTY_CELLAR_DATA)
   const [dataLoading, setDataLoading] = useState(!preview)
   const [dataError, setDataError] = useState('')
@@ -252,12 +251,6 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       setDataLoading(false)
     }
   }, [household.householdId, preview])
-
-  useEffect(() => {
-    const ready = () => setUpdateReady(true)
-    window.addEventListener('cellar-update-ready', ready)
-    return () => window.removeEventListener('cellar-update-ready', ready)
-  }, [])
 
   useEffect(() => {
     void refresh()
@@ -301,7 +294,6 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
         </div>
       </header>
       {preview && <div className="preview-banner">Visual preview - no production wine data</div>}
-      {updateReady && <button className="update-banner" onClick={() => window.location.reload()}>A new version is ready. Tap to refresh.</button>}
       {dataError && <button className="data-error" onClick={() => setDataError('')}>{dataError} <span>Dismiss</span></button>}
       <main className="app-scroll">
         {view === 'home' && <HomeView data={data} loading={dataLoading} photoUrls={photoUrls} go={go} onManage={(target) => setManagementStack([target])} />}

@@ -4,12 +4,7 @@ import { registerSW } from 'virtual:pwa-register'
 import App from './App'
 import './styles.css'
 
-registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    window.dispatchEvent(new CustomEvent('cellar-update-ready'))
-  }
-})
+registerSW({ immediate: true })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
