@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CellarData, GiftRecord, OpeningRecord, PhotoRecord, PurchaseRecord, VisitRecord, WineRecord, WineryRecord } from './lib/cellar-data'
 import { supabase } from './lib/supabase'
 import { createUniqueId } from './lib/unique-id'
@@ -7,6 +7,7 @@ import { ClosureSelect } from './ClosureSelect'
 import { EnrichmentDashboard, RecordEnrichment } from './Enrichment'
 import { userError, validatePhoto } from './lib/user-error'
 import { guidanceSourceLabel, guidanceStatus } from './lib/aging-guidance'
+import { nextRecordContext } from './lib/navigation-context'
 
 export type ManagementTarget =
   | { kind: 'wine'; record: WineRecord; initialTab?: DetailTab; autoAddPhoto?: boolean }
@@ -46,8 +47,8 @@ function photosFor(target: ManagementTarget, data: CellarData) {
   })
 }
 
-export function ManagementModal({ target, householdId, data, photoUrls, editable, canGoBack, returnToEnrichment, onBack, onClose, onNavigate, onSaved, onOpenBottle }: {
-  target: ManagementTarget; householdId: string; data: CellarData; photoUrls: Record<string, string>; editable: boolean; canGoBack: boolean; returnToEnrichment: boolean; onBack: () => void; onClose: () => void; onNavigate: (target: ManagementTarget) => void; onSaved: () => Promise<void>; onOpenBottle: (wineId: string) => void
+export function ManagementModal({ target, householdId, data, photoUrls, editable, canGoBack, navigationDepth, returnToEnrichment, onBack, onClose, onNavigate, onSaved, onOpenBottle }: {
+  target: ManagementTarget; householdId: string; data: CellarData; photoUrls: Record<string, string>; editable: boolean; canGoBack: boolean; navigationDepth: number; returnToEnrichment: boolean; onBack: () => void; onClose: () => void; onNavigate: (target: ManagementTarget) => void; onSaved: () => Promise<void>; onOpenBottle: (wineId: string) => void
 }) {
   const [tab, setTab] = useState<DetailTab>('details')
   const [editing, setEditing] = useState(false)
@@ -59,12 +60,21 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
   const [enrichmentFilter, setEnrichmentFilter] = useState(() => sessionStorage.getItem('cellar.enrichment.filter') || 'all')
   const modalRef = useRef<HTMLElement | null>(null)
   const enrichmentScroll = useRef(Number(sessionStorage.getItem('cellar.enrichment.scroll') || 0))
+  const contextByTarget = useRef(new Map<string, { scrollTop: number; tab: DetailTab }>())
+  const previousDepth = useRef(navigationDepth)
+  const currentKey = targetKey(target)
   useEffect(() => { sessionStorage.setItem('cellar.enrichment.kind', enrichmentKind) }, [enrichmentKind])
   useEffect(() => { sessionStorage.setItem('cellar.enrichment.filter', enrichmentFilter) }, [enrichmentFilter])
-  useEffect(() => {
-    setTab('record' in target ? target.initialTab ?? 'details' : 'details'); setEditing(false); setMessage(''); setViewer(null); setPhotoPrompt('record' in target && Boolean(target.autoAddPhoto))
-    if (target.kind === 'enrichment') requestAnimationFrame(() => { if (modalRef.current) modalRef.current.scrollTop = enrichmentScroll.current })
-  }, [targetKey(target)])
+  useLayoutEffect(() => {
+    const returning = navigationDepth < previousDepth.current
+    const defaultTab = 'record' in target ? target.initialTab ?? 'details' : 'details'
+    const nextContext = nextRecordContext({ previousDepth: previousDepth.current, nextDepth: navigationDepth, saved: contextByTarget.current.get(currentKey), defaultTab })
+    const nextTab = nextContext.tab
+    setTab(nextTab); setEditing(false); setMessage(''); setViewer(null); setPhotoPrompt('record' in target && Boolean(target.autoAddPhoto))
+    const nextScroll = returning && target.kind === 'enrichment' && !contextByTarget.current.has(currentKey) ? enrichmentScroll.current : nextContext.scrollTop
+    requestAnimationFrame(() => modalRef.current?.scrollTo({ top: nextScroll }))
+    previousDepth.current = navigationDepth
+  }, [currentKey, navigationDepth])
   useEffect(() => {
     const closeViewer = () => setViewer(null)
     window.addEventListener('popstate', closeViewer)
@@ -82,13 +92,13 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
   const title = targetTitle(target, data)
   const usesBack = recordTarget || canGoBack
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
-    <section ref={modalRef} className="workflow-modal workflow-form-modal management-modal" role="dialog" aria-modal="true" aria-label={title} onScroll={(event) => { if (target.kind === 'enrichment') { enrichmentScroll.current = event.currentTarget.scrollTop; sessionStorage.setItem('cellar.enrichment.scroll', String(event.currentTarget.scrollTop)) } }}>
+    <section ref={modalRef} className="workflow-modal workflow-form-modal management-modal" role="dialog" aria-modal="true" aria-label={title} onScroll={(event) => { contextByTarget.current.set(currentKey, { scrollTop: event.currentTarget.scrollTop, tab }); if (target.kind === 'enrichment') { enrichmentScroll.current = event.currentTarget.scrollTop; sessionStorage.setItem('cellar.enrichment.scroll', String(event.currentTarget.scrollTop)) } }}>
       <div className="sheet-header detail-header">
         <button className="icon-close" onClick={usesBack ? onBack : onClose} aria-label={usesBack ? 'Back' : 'Close'}>{usesBack ? '‹' : '×'}</button>
         <div><p className="eyebrow burgundy">THE CELLAR</p><h2>{title}</h2></div>
         {recordTarget && editable && (target.kind === 'wine' || target.kind === 'winery') ? <button className="text-button" onClick={() => setEditing((value) => !value)}>{editing ? 'Cancel' : 'Edit'}</button> : <span className="header-spacer" />}
       </div>
-      {recordTarget && tabbedRecordTarget && <div className="detail-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>Details</button><button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button><button className={tab === 'photos' ? 'active' : ''} onClick={() => setTab('photos')}>Photos</button></div>}
+      {recordTarget && tabbedRecordTarget && <div className="detail-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => { setTab('details'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'details' }); modalRef.current?.scrollTo({ top: 0 }) }}>Details</button><button className={tab === 'history' ? 'active' : ''} onClick={() => { setTab('history'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'history' }); modalRef.current?.scrollTo({ top: 0 }) }}>History</button><button className={tab === 'photos' ? 'active' : ''} onClick={() => { setTab('photos'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'photos' }); modalRef.current?.scrollTo({ top: 0 }) }}>Photos</button></div>}
       {recordTarget && tab === 'details' && <>
         <RecordHero target={target} data={data} hasPhoto={Boolean(hero)} url={hero ? photoUrls[hero.id] : undefined} editable={editable} onView={() => hero && viewPhoto(hero)} onAdd={() => { setPhotoPrompt(true); setTab('photos') }} />
         {target.kind === 'wine' && <WineDetails wine={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNavigate={onNavigate} onOpenBottle={onOpenBottle} onEnrichmentAccepted={returnToEnrichment ? onBack : undefined} />}
@@ -170,7 +180,7 @@ function WineryDetails({ winery, data, editing, setEditing, editable, busy, setB
   const save = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!supabase || !editable) return; setBusy(true); setMessage(''); const form = new FormData(event.currentTarget); try { const result = await supabase.from('wineries').update({ name: String(form.get('name')).trim(), country: optional(form, 'country'), state: optional(form, 'state'), region: optional(form, 'region'), city: optional(form, 'city'), address: optional(form, 'address'), website_url: optional(form, 'website_url'), contact_phone: optional(form, 'contact_phone'), contact_email: optional(form, 'contact_email'), notes: optional(form, 'notes'), favorite: form.get('favorite') === 'on', would_visit_again: optional(form, 'would_visit_again') }).eq('household_id', householdId).eq('id', winery.id); if (result.error) throw result.error; await onSaved(); setEditing(false); setMessage('Saved successfully.') } catch (error) { setMessage(userError(error, 'The winery could not be saved. Please try again.')) } finally { setBusy(false) } }
   if (editing) return <form className="workflow-form detail-form" onSubmit={save}><label>Name<input name="name" required defaultValue={winery.name} /></label><div className="field-grid"><label>City<input name="city" defaultValue={winery.city ?? ''} /></label><StateSelect defaultValue={winery.state ?? ''} /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><div className="field-grid"><label>Region<input name="region" defaultValue={winery.region ?? ''} /></label><label>Country<input name="country" defaultValue={winery.country ?? ''} /></label></div><label>Address<input name="address" defaultValue={winery.address ?? ''} /></label><label>Website<input name="website_url" type="url" defaultValue={winery.websiteUrl ?? ''} /></label><div className="field-grid"><label>Phone<input name="contact_phone" type="tel" defaultValue={winery.contactPhone ?? ''} /></label><label>Email<input name="contact_email" type="email" defaultValue={winery.contactEmail ?? ''} /></label></div><label>Would visit again<select name="would_visit_again" defaultValue={winery.wouldVisitAgain ?? ''}><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="check-field"><input name="favorite" type="checkbox" defaultChecked={winery.favorite} /> Favorite winery</label><label>Notes<textarea name="notes" rows={4} defaultValue={winery.notes ?? ''} /></label></div></details><button className="primary-button" disabled={busy}>Save winery</button></form>
   const wines = data.wines.filter((wine) => wine.wineryId === winery.id), visits = data.visits.filter((visit) => visit.wineryId === winery.id)
-  return <div className="detail-content"><RecordEnrichment kind="winery" entityId={winery.id} data={data} editable={editable} onSaved={onSaved} onAccepted={onEnrichmentAccepted} />{(winery.notes || winery.websiteUrl) && <section className="detail-section"><p className="eyebrow burgundy">PERSONAL / RECORDED</p><h3>Our Winery Notes</h3>{winery.notes && <p>{winery.notes}</p>}{winery.websiteUrl && <a className="inline-link" href={winery.websiteUrl} target="_blank" rel="noreferrer">Recorded website ↗</a>}</section>}<section className="detail-section"><h3>Wines from here</h3>{wines.length ? <div className="record-list">{wines.map((wine) => <RecordLink key={wine.id} title={wine.name} subtitle={`${wine.nonVintage ? 'NV' : wine.vintage ?? 'Vintage not set'} · ${wine.availableQuantity} available`} onClick={() => onNavigate({ kind: 'wine', record: wine })} />)}</div> : <p className="empty-copy compact">No wines linked yet.</p>}</section>{visits.length > 0 && <section className="detail-section"><h3>Visits</h3><div className="record-list">{visits.map((visit) => <RecordLink key={visit.id} title={date(visit.visitDate)} subtitle={visit.notes ?? 'Winery visit'} onClick={() => onNavigate({ kind: 'visit', record: visit })} />)}</div></section>}</div>
+  return <div className="detail-content"><RecordEnrichment kind="winery" entityId={winery.id} data={data} editable={editable} onSaved={onSaved} onAccepted={onEnrichmentAccepted} />{(winery.notes || winery.websiteUrl) && <section className="detail-section"><p className="eyebrow burgundy">PERSONAL / RECORDED</p><h3>Our Winery Notes</h3>{winery.notes && <p>{winery.notes}</p>}{winery.websiteUrl && <a className="inline-link" href={winery.websiteUrl} target="_blank" rel="noreferrer">Recorded website ↗</a>}</section>}<section className="detail-section"><h3>Wines from here</h3>{wines.length ? <div className="record-list">{wines.map((wine) => <RecordLink key={wine.id} title={wine.name} subtitle={wineLinkSubtitle(wine, `${wine.availableQuantity} available`)} onClick={() => onNavigate({ kind: 'wine', record: wine })} />)}</div> : <p className="empty-copy compact">No wines linked yet.</p>}</section>{visits.length > 0 && <section className="detail-section"><h3>Visits</h3><div className="record-list">{visits.map((visit) => <RecordLink key={visit.id} title={date(visit.visitDate)} subtitle={visit.notes ?? 'Winery visit'} onClick={() => onNavigate({ kind: 'visit', record: visit })} />)}</div></section>}</div>
 }
 
 function OpeningDetails({ opening, data, onNavigate }: { opening: OpeningRecord; data: CellarData; onNavigate: (target: ManagementTarget) => void }) {
@@ -196,6 +206,7 @@ function VisitDetails({ visit, data, onNavigate }: { visit: VisitRecord; data: C
 
 function Fact({ label, value }: { label: string; value?: string | null }) { return <div><dt>{label}</dt><dd>{value || 'Not set'}</dd></div> }
 function RecordLink({ title, subtitle, onClick }: { title: string; subtitle?: string; onClick: () => void }) { return <button className="record-link" onClick={onClick}><span><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span><span aria-hidden="true">›</span></button> }
+function wineLinkSubtitle(wine: WineRecord, extra?: string) { return [wine.nonVintage ? 'NV' : wine.vintage ?? 'Vintage not set', extra, wine.agingCount ? `${wine.agingCount} Aging` : null, wine.agingHoldUntilYear ? `Hold: ${wine.agingHoldUntilYear}` : null].filter(Boolean).join(' · ') }
 
 function History({ target, data, onNavigate }: { target: ManagementTarget; data: CellarData; onNavigate: (target: ManagementTarget) => void }) {
   const wine = target.kind === 'wine' ? target.record : target.kind === 'opening' || target.kind === 'gift' ? data.wines.find((item) => item.id === target.record.wineId) : null
@@ -210,7 +221,7 @@ function History({ target, data, onNavigate }: { target: ManagementTarget; data:
   return <div className="history-list">{events.length ? events.map((event) => <button className="history-card" key={event.key} onClick={() => onNavigate(event.target)}><small>{event.at ? date(event.at) : 'Date unknown'}</small><strong>{event.title}</strong>{event.body && <p>{event.body}</p>}<span aria-hidden="true">›</span></button>) : <p className="empty-copy">No history yet.</p>}</div>
 }
 
-function Favorites({ data, onNavigate }: { data: CellarData; onNavigate: (target: ManagementTarget) => void }) { const wines = data.wines.filter((wine) => wine.favorite || data.preferences.some((preference) => preference.wineId === wine.id && preference.favorite)); return <div className="record-list standalone-list">{wines.length ? wines.map((wine) => <RecordLink key={wine.id} title={wine.name} subtitle={`${wine.wineryName ?? 'Winery not set'} · ${wine.nonVintage ? 'NV' : wine.vintage ?? 'Vintage not set'}`} onClick={() => onNavigate({ kind: 'wine', record: wine })} />) : <p className="empty-copy">Favorites will appear here as each household member marks them.</p>}</div> }
+function Favorites({ data, onNavigate }: { data: CellarData; onNavigate: (target: ManagementTarget) => void }) { const wines = data.wines.filter((wine) => wine.favorite || data.preferences.some((preference) => preference.wineId === wine.id && preference.favorite)); return <div className="record-list standalone-list">{wines.length ? wines.map((wine) => <RecordLink key={wine.id} title={wine.name} subtitle={`${wine.wineryName ?? 'Winery not set'} · ${wineLinkSubtitle(wine)}`} onClick={() => onNavigate({ kind: 'wine', record: wine })} />) : <p className="empty-copy">Favorites will appear here as each household member marks them.</p>}</div> }
 
 function PhotoPanel({ target, householdId, photos, urls, editable, busy, autoAdd, onPrompted, setBusy, setMessage, onSaved, onView }: { target: ManagementTarget; householdId: string; photos: PhotoRecord[]; urls: Record<string, string>; editable: boolean; busy: boolean; autoAdd: boolean; onPrompted: () => void; setBusy: (value: boolean) => void; setMessage: (value: string) => void; onSaved: () => Promise<void>; onView: (photo: PhotoRecord) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null)

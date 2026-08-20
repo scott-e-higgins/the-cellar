@@ -353,13 +353,13 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       <main ref={mainScrollRef} className="app-scroll" onScroll={(event) => { viewScroll.current[view] = event.currentTarget.scrollTop }}>
         <div hidden={view !== 'home'}><HomeView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} go={go} onAdd={() => startAction('add-wine')} onManage={openManagement} /></div>
         <div hidden={view !== 'cellar'}><CellarView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-wine')} onManage={openManagement} /></div>
-        <div hidden={view !== 'wineries'}><WineriesView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-winery')} onManage={openManagement} onViewPhoto={showCardPhoto} /></div>
+        <div hidden={view !== 'wineries'}><WineriesView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-winery')} onManage={openManagement} /></div>
         <div hidden={view !== 'more'}><MoreView household={household} onSignOut={onSignOut} onManage={openManagement} /></div>
       </main>
       <BottomNav view={view} go={go} onQuick={() => { setQuickOpen(true); pushOverlay({ type: 'quick' }) }} />
       {quickOpen && <QuickActions onClose={() => window.history.back()} onSelect={startAction} />}
       {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
-      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onSaved={refresh} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
+      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onSaved={refresh} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
       {cardPhoto && <CardPhotoViewer photo={cardPhoto} url={photoUrls[cardPhoto.id]} onClose={() => window.history.back()} />}
       {toast && <div className={`app-toast ${toast.tone}`} role="status">{toast.message}</div>}
     </div>
@@ -438,7 +438,7 @@ function CellarView({ data, loading, photoUrls, editable, onAdd, onManage }: { d
   )
 }
 
-function WineriesView({ data, loading, photoUrls, editable, onAdd, onManage, onViewPhoto }: { data: CellarData; loading: boolean; photoUrls: Record<string, string>; editable: boolean; onAdd: () => void; onManage: (target: ManagementTarget) => void; onViewPhoto: (photo: PhotoRecord) => void }) {
+function WineriesView({ data, loading, photoUrls, editable, onAdd, onManage }: { data: CellarData; loading: boolean; photoUrls: Record<string, string>; editable: boolean; onAdd: () => void; onManage: (target: ManagementTarget) => void }) {
   const [search, setSearch] = useState('')
   const wineries = data.wineries
   const filtered = wineries.filter((winery) => [winery.name, winery.region, winery.state, winery.country].filter(Boolean).join(' ').toLowerCase().includes(search.trim().toLowerCase()))
@@ -446,7 +446,7 @@ function WineriesView({ data, loading, photoUrls, editable, onAdd, onManage, onV
     <div className="screen">
       <div className="screen-lead"><div><p className="eyebrow burgundy">PLACES &amp; MEMORIES</p><h2>{loading ? 'Loading…' : `${wineries.length} wineries`}</h2></div></div>
       <label className="search-box"><Icon name="search" size={20}/><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search wineries or locations..." aria-label="Search wineries" /></label>
-      {loading ? <CollectionLoading label="Loading wineries…" /> : filtered.length ? <div className="winery-grid">{filtered.map((winery) => { const photo = heroPhotoFor('winery', winery.id, data); return <WineryCard key={winery.id} winery={winery} hasPhoto={Boolean(photo)} photoUrl={photo ? photoUrls[photo.id] : undefined} onOpen={() => onManage({ kind: 'winery', record: winery })} onPhoto={() => photo ? onViewPhoto(photo) : onManage({ kind: 'winery', record: winery, initialTab: 'photos', autoAddPhoto: editable })} /> })}</div> : <article className="winery-empty brass-corners"><div className="winery-mark"><Icon name="winery" size={40}/></div><p className="eyebrow">WINERY JOURNAL</p><h3>{search ? 'No matching wineries' : 'Save the places behind the bottles'}</h3><p>{search ? 'Try a broader place or winery name.' : 'Add the first winery to begin the journal.'}</p>{editable && !search && <button className="secondary-button" onClick={onAdd}>Add Winery</button>}</article>}
+      {loading ? <CollectionLoading label="Loading wineries…" /> : filtered.length ? <div className="winery-grid">{filtered.map((winery) => { const photo = heroPhotoFor('winery', winery.id, data); return <WineryCard key={winery.id} winery={winery} hasPhoto={Boolean(photo)} photoUrl={photo ? photoUrls[photo.id] : undefined} onOpen={() => onManage({ kind: 'winery', record: winery })} /> })}</div> : <article className="winery-empty brass-corners"><div className="winery-mark"><Icon name="winery" size={40}/></div><p className="eyebrow">WINERY JOURNAL</p><h3>{search ? 'No matching wineries' : 'Save the places behind the bottles'}</h3><p>{search ? 'Try a broader place or winery name.' : 'Add the first winery to begin the journal.'}</p>{editable && !search && <button className="secondary-button" onClick={onAdd}>Add Winery</button>}</article>}
     </div>
   )
 }
@@ -468,13 +468,18 @@ function WineCard({ wine, hasPhoto, photoUrl, onOpen }: { wine: WineRecord; hasP
   return (
     <article className="wine-card brass-corners">
       <button className={`wine-visual ${hasPhoto ? 'has-photo' : ''}`} onClick={onOpen} aria-label={`Open ${wine.name}`}>{photoUrl ? <img src={photoUrl} alt="" /> : hasPhoto ? <span>Loading photo…</span> : <><Icon name="bottle" size={47}/><span>{wine.category || wine.style || 'WINE'}</span></>}</button>
-      <button className="wine-card-copy" onClick={onOpen} aria-label={`Open ${wine.name}`}><p className="eyebrow burgundy">{wine.wineryName || 'INDEPENDENT WINE'}</p><h3>{wine.name}</h3><p>{wineVintage(wine)}</p><strong>{wine.availableQuantity} available{wine.agingCount ? ` · ${wine.agingCount} Aging` : ''}{wine.storageNames.length ? ` · ${wine.storageNames.join(', ')}` : ''}</strong></button>
+      <button className="wine-card-copy" onClick={onOpen} aria-label={`Open ${wine.name}`}><p className="eyebrow burgundy">{wine.wineryName || 'INDEPENDENT WINE'}</p><h3>{wine.name}</h3><p className="wine-card-vintage">{wineVintage(wine)}</p><strong>{wine.availableQuantity} available{wine.storageNames.length ? ` · ${wine.storageNames.join(', ')}` : ''}</strong><WineIndicators wine={wine} /></button>
     </article>
   )
 }
 
+function WineIndicators({ wine }: { wine: WineRecord }) {
+  if (!wine.agingCount) return null
+  return <span className="wine-indicators"><span>Aging{wine.availableQuantity > 1 ? ` · ${wine.agingCount}` : ''}</span>{wine.agingHoldUntilYear && <span>Hold: {wine.agingHoldUntilYear}</span>}</span>
+}
+
 function WineRow({ wine, onClick }: { wine: WineRecord; onClick: () => void }) {
-  return <button className="wine-row" onClick={onClick}><span className="row-icon"><Icon name="bottle"/></span><div><strong>{wine.name}</strong><small>{wine.wineryName || 'Winery not set'} · {wineVintage(wine)}{wine.agingCount ? ` · ${wine.agingCount} Aging` : ''}</small></div><span className="quantity-pill">{wine.availableQuantity}</span></button>
+  return <button className="wine-row" onClick={onClick}><span className="row-icon"><Icon name="bottle"/></span><div><strong>{wine.name}</strong><small>{wine.wineryName || 'Winery not set'} · <b>{wineVintage(wine)}</b></small><WineIndicators wine={wine} /></div><span className="quantity-pill">{wine.availableQuantity}</span></button>
 }
 
 function wineryPlace(winery: WineryRecord) {
@@ -485,8 +490,8 @@ function WineryRow({ winery }: { winery: WineryRecord }) {
   return <article className="winery-row"><span className="row-icon"><Icon name="winery"/></span><div><strong>{winery.name}</strong><small>{wineryPlace(winery)}</small></div><span className="quantity-pill">{winery.visitCount} visits</span></article>
 }
 
-function WineryCard({ winery, hasPhoto, photoUrl, onOpen, onPhoto }: { winery: WineryRecord; hasPhoto: boolean; photoUrl?: string; onOpen: () => void; onPhoto: () => void }) {
-  return <article className="winery-card brass-corners"><button className={`winery-card-visual ${hasPhoto ? 'has-photo' : ''}`} onClick={onPhoto} aria-label={hasPhoto ? `View photo of ${winery.name}` : `Add photo to ${winery.name}`}>{photoUrl ? <img src={photoUrl} alt="" /> : hasPhoto ? <span>Loading…</span> : <Icon name="winery" size={38}/>}</button><button className="winery-card-copy" onClick={onOpen} aria-label={`Open ${winery.name}`}><div><p className="eyebrow burgundy">{winery.favorite ? 'FAVORITE WINERY' : 'WINERY'}</p><h3>{winery.name}</h3><p>{wineryPlace(winery)}</p><div className="winery-meta"><span>{winery.wineCount} {winery.wineCount === 1 ? 'wine' : 'wines'}</span><span>{winery.visitCount} {winery.visitCount === 1 ? 'visit' : 'visits'}</span></div></div><span className="card-chevron"><Icon name="chevron" size={18}/></span></button></article>
+function WineryCard({ winery, hasPhoto, photoUrl, onOpen }: { winery: WineryRecord; hasPhoto: boolean; photoUrl?: string; onOpen: () => void }) {
+  return <article className="winery-card brass-corners"><button className={`winery-card-visual ${hasPhoto ? 'has-photo' : ''}`} onClick={onOpen} aria-label={`Open ${winery.name}`}>{photoUrl ? <img src={photoUrl} alt="" /> : hasPhoto ? <span>Loading…</span> : <Icon name="winery" size={38}/>}</button><button className="winery-card-copy" onClick={onOpen} aria-label={`Open ${winery.name}`}><div><p className="eyebrow burgundy">{winery.favorite ? 'FAVORITE WINERY' : 'WINERY'}</p><h3>{winery.name}</h3><p>{wineryPlace(winery)}</p><div className="winery-meta"><span>{winery.wineCount} {winery.wineCount === 1 ? 'wine' : 'wines'}</span><span>{winery.visitCount} {winery.visitCount === 1 ? 'visit' : 'visits'}</span></div></div><span className="card-chevron"><Icon name="chevron" size={18}/></span></button></article>
 }
 
 function CardPhotoViewer({ photo, url, onClose }: { photo: PhotoRecord; url?: string; onClose: () => void }) {
