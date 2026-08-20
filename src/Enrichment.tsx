@@ -1,6 +1,7 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { CellarData, EnrichmentAttempt, EnrichmentSource, OnlineInfoRecord } from './lib/cellar-data'
 import { supabase } from './lib/supabase'
+import { userError } from './lib/user-error'
 
 type EntityKind = 'wine' | 'winery'
 type Navigate = (kind: EntityKind, id: string) => void
@@ -40,19 +41,19 @@ function SourceList({ sources }: { sources: EnrichmentSource[] }) {
   return <details className="source-details"><summary>{sources.length === 1 ? 'Source' : `${sources.length} sources`}</summary><div>{sources.map((source) => <a key={source.id || source.sourceUrl} href={source.sourceUrl} target="_blank" rel="noreferrer"><strong>{source.sourceName}</strong><small>{source.sourceType.replaceAll('_', ' ')} · retrieved {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(source.retrievedAt))}</small></a>)}</div></details>
 }
 
-export function RecordEnrichment({ kind, entityId, data, editable, onSaved }: { kind: EntityKind; entityId: string; data: CellarData; editable: boolean; onSaved: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [editing, setEditing] = useState(false), [dismissed, setDismissed] = useState<string | null>(null)
+export function RecordEnrichment({ kind, entityId, data, editable, onSaved, onAccepted }: { kind: EntityKind; entityId: string; data: CellarData; editable: boolean; onSaved: () => Promise<void>; onAccepted?: () => void }) {
+  const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [editing, setEditing] = useState(false)
   const info = (kind === 'wine' ? data.wineOnlineInfo : data.wineryOnlineInfo).find((item) => item.entityId === entityId)
   const attempts = attemptsFor(kind, entityId, data)
   const latest = attempts[0]
-  const review = latest?.status === 'ready_for_review' && latest.id !== dismissed ? latest : null
+  const review = latest?.status === 'ready_for_review' ? latest : null
   const sourceAttemptId = info?.acceptedAttemptId ?? review?.id ?? latest?.id ?? null
   const sources = sourcesFor(sourceAttemptId, data)
   const run = async (force = false) => {
     if (!supabase || !editable) return
     setBusy(true); setMessage('')
     const result = await supabase.functions.invoke('enrich-record', { body: { entityKind: kind, entityId, force } })
-    if (result.error) setMessage(result.error.message)
+    if (result.error) setMessage(userError(result.error, 'The search could not be completed. Please try again.'))
     else { await onSaved(); setMessage(result.data?.autoAccepted ? 'Reliable information found and saved.' : result.data?.status === 'no_match' ? 'No reliable match was found.' : 'Information found. Review it below.') }
     setBusy(false)
   }
@@ -62,12 +63,20 @@ export function RecordEnrichment({ kind, entityId, data, editable, onSaved }: { 
     let edited: Record<string, unknown> | null = null
     if (event) { const form = new FormData(event.currentTarget); edited = Object.fromEntries(Object.keys(review.proposedData).map((key) => { const original = review.proposedData[key]; const value = String(form.get(key) ?? '').trim(); return [key, Array.isArray(original) ? value.split(';').map((item) => item.trim()).filter(Boolean) : typeof original === 'number' ? Number(value) : value] }).filter(([, value]) => value !== '')) }
     const result = await supabase.rpc('accept_enrichment_attempt', { p_attempt_id: review.id, p_edited_data: edited })
-    if (result.error) setMessage(result.error.message); else { await onSaved(); setMessage('Online information accepted.'); setEditing(false) }
+    if (result.error) setMessage(userError(result.error, 'The information could not be accepted. Please try again.')); else { await onSaved(); setMessage('Online information accepted.'); setEditing(false); onAccepted?.() }
+    setBusy(false)
+  }
+  const skip = async () => {
+    if (!supabase || !review) return
+    setBusy(true); setMessage('')
+    const result = await supabase.rpc('reject_enrichment_attempt', { p_attempt_id: review.id })
+    if (result.error) setMessage(userError(result.error, 'The suggestion could not be skipped. Please try again.'))
+    else { await onSaved(); setMessage('Suggestion skipped.'); onAccepted?.() }
     setBusy(false)
   }
   return <section className="detail-section online-info"><div className="online-heading"><div><p className="eyebrow burgundy">OFFICIAL / ONLINE</p><h3>{titleFor(kind)}</h3></div>{info && <span className={`confidence-badge ${info.confidence}`}>{info.confidence}</span>}</div>
     {info ? <Information info={info} sources={sources} /> : !review && <p>{latest?.status === 'no_match' ? 'No reliable online match has been found yet.' : latest?.status === 'failed' ? 'The last search could not be completed.' : 'Add reliable producer and official information without changing your personal notes.'}</p>}
-    {review && <div className="enrichment-review"><div className="review-lead"><span className={`confidence-badge ${review.confidence ?? 'low'}`}>{review.confidence ?? 'review'}</span><p>{review.matchExplanation || 'A likely match needs review before it is saved.'}</p></div>{editing ? <form className="enrichment-edit" onSubmit={accept}>{Object.entries(review.proposedData).map(([key, value]) => <label key={key}>{LABELS[key] ?? key.replaceAll('_', ' ')}{LONG_FIELDS.has(key) ? <textarea name={key} defaultValue={readable(value, key)} /> : <input name={key} defaultValue={readable(value, key)} />}{Array.isArray(value) && <small>Separate multiple items with semicolons.</small>}</label>)}<div className="enrichment-actions"><button className="primary-button" disabled={busy}>Save reviewed info</button><button type="button" className="secondary-button" onClick={() => setEditing(false)}>Cancel edit</button></div></form> : <><dl className="online-facts proposed">{Object.entries(review.proposedData).map(([key, value]) => <div className={LONG_FIELDS.has(key) ? 'wide' : ''} key={key}><dt>{LABELS[key] ?? key.replaceAll('_', ' ')}</dt><dd>{readable(value, key)}</dd></div>)}</dl><SourceList sources={sources} /><div className="enrichment-actions"><button className="primary-button" disabled={busy} onClick={() => void accept()}>Accept</button><button className="secondary-button" disabled={busy} onClick={() => setEditing(true)}>Edit</button><button className="secondary-button" disabled={busy} onClick={() => void run(true)}>Try Again</button><button className="text-action" disabled={busy} onClick={() => setDismissed(review.id)}>Cancel</button></div></>}</div>}
+    {review && <div className="enrichment-review"><div className="review-lead"><span className={`confidence-badge ${review.confidence ?? 'low'}`}>{review.confidence ?? 'review'}</span><p>{review.matchExplanation || 'A likely match needs review before it is saved.'}</p></div>{editing ? <form className="enrichment-edit" onSubmit={accept}>{Object.entries(review.proposedData).map(([key, value]) => <label key={key}>{LABELS[key] ?? key.replaceAll('_', ' ')}{LONG_FIELDS.has(key) ? <textarea name={key} defaultValue={readable(value, key)} /> : <input name={key} defaultValue={readable(value, key)} />}{Array.isArray(value) && <small>Separate multiple items with semicolons.</small>}</label>)}<div className="enrichment-actions"><button className="primary-button" disabled={busy}>Save reviewed info</button><button type="button" className="secondary-button" onClick={() => setEditing(false)}>Cancel edit</button></div></form> : <><dl className="online-facts proposed">{Object.entries(review.proposedData).map(([key, value]) => <div className={LONG_FIELDS.has(key) ? 'wide' : ''} key={key}><dt>{LABELS[key] ?? key.replaceAll('_', ' ')}</dt><dd>{readable(value, key)}</dd></div>)}</dl><SourceList sources={sources} /><div className="enrichment-actions"><button className="primary-button" disabled={busy} onClick={() => void accept()}>Accept</button><button className="secondary-button" disabled={busy} onClick={() => setEditing(true)}>Edit</button><button className="secondary-button" disabled={busy} onClick={() => void run(true)}>Try Again</button><button className="text-action" disabled={busy} onClick={() => void skip()}>Skip</button></div></>}</div>}
     {editable && !review && <button className="secondary-button enrichment-button" disabled={busy} onClick={() => void run(Boolean(info || latest))}>{busy ? 'Searching reliable sources…' : info ? `Refresh ${kind === 'wine' ? 'Wine' : 'Winery'} Info` : `Find ${kind === 'wine' ? 'Wine' : 'Winery'} Info`}</button>}
     {message && <p className="form-message">{message}</p>}
   </section>
@@ -93,11 +102,12 @@ export function EnrichmentDashboard({ householdId, data, editable, onSaved, onNa
   const counts = Object.fromEntries(['enriched', 'ready_for_review', 'no_match', 'not_searched', 'failed'].map((status) => [status, records.filter((record) => statusFor(kind, record.id, data, latest) === status).length]))
   const visible = records.filter((record) => filter === 'all' || statusFor(kind, record.id, data, latest) === filter)
   const runningJob = data.enrichmentJobs.find((job) => job.entityKind === kind && job.status === 'running')
+  useEffect(() => { if (!runningJob) return; const timer = window.setInterval(() => void onSaved(), 15_000); return () => window.clearInterval(timer) }, [runningJob?.id, onSaved])
   const runBatch = async () => {
     if (!supabase || !editable) return
     setBusy(true); setProgress('Starting secure background enrichment…')
     const result = await supabase.functions.invoke('enrich-record', { body: { action: 'batch', householdId, entityKind: kind } })
-    if (result.error) setProgress(result.error.message)
+    if (result.error) setProgress(userError(result.error, 'Background enrichment could not be started. Please try again.'))
     else setProgress('Running in the background. You can close the app or let your phone sleep.')
     await onSaved(); setBusy(false)
   }
