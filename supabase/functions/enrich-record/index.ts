@@ -126,7 +126,7 @@ Deno.serve(async (request: Request) => {
     return Deno.env.get("SUPABASE_ANON_KEY")!;
   })();
   const authorization = request.headers.get("Authorization") ?? "";
-  const client = createClient(supabaseUrl, publishable, { global: { headers: { Authorization: authorization } } });
+  const client = createClient(supabaseUrl, publishable, { db: { schema: "cellar" }, global: { headers: { Authorization: authorization } } });
   const { data: authData, error: authError } = await client.auth.getUser();
   if (authError || !authData.user) return Response.json({ error: "Sign in is required." }, { status: 401, headers: corsHeaders });
 

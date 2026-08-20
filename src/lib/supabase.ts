@@ -8,7 +8,7 @@ export const isSupabaseConfigured = Boolean(url && publishableKey)
 export const supabase = isSupabaseConfigured
   ? createClient(url!, publishableKey!, {
       db: {
-        schema: 'public',
+        schema: 'cellar',
       },
       auth: {
         persistSession: true,
