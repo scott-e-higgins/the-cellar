@@ -86,8 +86,8 @@ function statusFor(kind: EntityKind, id: string, data: CellarData, latest: Map<s
 
 const STATUS_LABELS: Record<string, string> = { enriched: 'Enriched', ready_for_review: 'Ready for Review', no_match: 'No Match', not_searched: 'Not Yet Searched', failed: 'Failed / Retry', searching: 'Searching', rejected: 'Rejected' }
 
-export function EnrichmentDashboard({ householdId, data, editable, onSaved, onNavigate }: { householdId: string; data: CellarData; editable: boolean; onSaved: () => Promise<void>; onNavigate: Navigate }) {
-  const [kind, setKind] = useState<EntityKind>('wine'), [filter, setFilter] = useState('all'), [busy, setBusy] = useState(false), [progress, setProgress] = useState('')
+export function EnrichmentDashboard({ householdId, data, editable, onSaved, onNavigate, kind, setKind, filter, setFilter }: { householdId: string; data: CellarData; editable: boolean; onSaved: () => Promise<void>; onNavigate: Navigate; kind: EntityKind; setKind: (kind: EntityKind) => void; filter: string; setFilter: (filter: string) => void }) {
+  const [busy, setBusy] = useState(false), [progress, setProgress] = useState('')
   const latest = useMemo(() => latestByEntity(kind, data), [kind, data])
   const records = kind === 'wine' ? data.wines : data.wineries
   const counts = Object.fromEntries(['enriched', 'ready_for_review', 'no_match', 'not_searched', 'failed'].map((status) => [status, records.filter((record) => statusFor(kind, record.id, data, latest) === status).length]))
