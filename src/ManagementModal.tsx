@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CellarData, GiftRecord, OpeningRecord, PhotoRecord, PurchaseRecord, VisitRecord, WineRecord, WineryRecord } from './lib/cellar-data'
 import { supabase } from './lib/supabase'
 import { createUniqueId } from './lib/unique-id'
@@ -50,14 +50,21 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [viewer, setViewer] = useState<PhotoRecord | null>(null)
-  useEffect(() => { setTab('details'); setEditing(false); setMessage(''); setViewer(null) }, [targetKey(target)])
+  const [enrichmentKind, setEnrichmentKind] = useState<'wine' | 'winery'>('wine')
+  const [enrichmentFilter, setEnrichmentFilter] = useState('all')
+  const modalRef = useRef<HTMLElement | null>(null)
+  const enrichmentScroll = useRef(0)
+  useEffect(() => {
+    setTab('details'); setEditing(false); setMessage(''); setViewer(null)
+    if (target.kind === 'enrichment') requestAnimationFrame(() => { if (modalRef.current) modalRef.current.scrollTop = enrichmentScroll.current })
+  }, [targetKey(target)])
   const recordTarget = ['wine', 'winery', 'opening', 'purchase', 'gift', 'visit'].includes(target.kind)
   const tabbedRecordTarget = target.kind !== 'gift'
   const relatedPhotos = photosFor(target, data)
   const hero = relatedPhotos.find((photo) => photo.isHero) ?? relatedPhotos[0]
   const title = targetTitle(target, data)
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
-    <section className="workflow-modal workflow-form-modal management-modal" role="dialog" aria-modal="true" aria-label={title}>
+    <section ref={modalRef} className="workflow-modal workflow-form-modal management-modal" role="dialog" aria-modal="true" aria-label={title}>
       <div className="sheet-header detail-header">
         <button className="icon-close" onClick={canGoBack ? onBack : onClose} aria-label={canGoBack ? 'Back' : 'Close'}>{canGoBack ? '‹' : '×'}</button>
         <div><p className="eyebrow burgundy">THE CELLAR</p><h2>{title}</h2></div>
@@ -80,7 +87,7 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
       {target.kind === 'statistics' && <Statistics data={data} />}
       {target.kind === 'storage' && <Storage data={data} householdId={householdId} editable={editable} onSaved={onSaved} />}
       {target.kind === 'documents' && <Documents householdId={householdId} data={data} editable={editable} onSaved={onSaved} onNavigate={onNavigate} />}
-      {target.kind === 'enrichment' && <EnrichmentDashboard householdId={householdId} data={data} editable={editable} onSaved={onSaved} onNavigate={(kind, id) => { if (kind === 'wine') { const wine = data.wines.find((item) => item.id === id); if (wine) onNavigate({ kind: 'wine', record: wine }) } else { const winery = data.wineries.find((item) => item.id === id); if (winery) onNavigate({ kind: 'winery', record: winery }) } }} />}
+      {target.kind === 'enrichment' && <EnrichmentDashboard householdId={householdId} data={data} editable={editable} onSaved={onSaved} kind={enrichmentKind} setKind={setEnrichmentKind} filter={enrichmentFilter} setFilter={setEnrichmentFilter} onNavigate={(kind, id) => { enrichmentScroll.current = modalRef.current?.scrollTop ?? 0; if (kind === 'wine') { const wine = data.wines.find((item) => item.id === id); if (wine) onNavigate({ kind: 'wine', record: wine }) } else { const winery = data.wineries.find((item) => item.id === id); if (winery) onNavigate({ kind: 'winery', record: winery }) } }} />}
       {target.kind === 'trips' && <Empty title="Trips will appear when they are genuinely linked" text="The Travel Journal remains independent. This area will stay quiet until controlled two-way trip links are implemented." />}
       {target.kind === 'settings' && <Empty title="Private household collection" text="Authentication, member roles, private photos and documents, installable PWA behavior, and import guardrails are active." />}
       {message && <p className={message.startsWith('Saved') || message.includes('uploaded') ? 'form-message success' : 'form-message error'}>{message}</p>}
