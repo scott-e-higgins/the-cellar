@@ -140,6 +140,9 @@ body::before {
 .filter-panel select { min-width: 0; border: 1px solid #cbbba4; border-radius: 6px; padding: 9px; background: white; font-size: 14px; }
 .filter-panel > button { border: 0; color: var(--burgundy); background: transparent; font-weight: 700; text-align: left; }
 .inventory-empty { min-height: 335px; margin-top: 13px; display: grid; place-items: center; align-content: center; padding: 35px 24px; text-align: center; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255, 250, 240, .62); }
+.collection-loading { min-height: 180px; display: grid; place-items: center; align-content: center; gap: var(--space-3); margin-top: var(--space-3); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255, 250, 240, .62); }
+.collection-loading p { margin: 0; font-size: 13px; }
+.collection-loading .loading-line::after { animation: loading 1.1s infinite ease-in-out; }
 .bottle-silhouette { width: 76px; height: 76px; display: grid; place-items: center; margin-bottom: 15px; color: var(--burgundy); border: 1px solid #d5c4a8; background: #f4e8d5; }
 .inventory-empty h3 { margin: 0 0 7px; font: 700 23px 'Playfair Display', serif; }
 .inventory-empty p { max-width: 520px; margin-bottom: 20px; color: var(--muted); line-height: 1.55; }
@@ -363,7 +366,9 @@ button:not(:disabled):active { transform: translateY(1px); }
 .wine-card:hover, .winery-card:hover, .record-link:hover, .history-card:hover, .memory-row:hover { border-color: #c5ad83; box-shadow: 0 10px 26px rgba(74, 53, 28, .12); }
 .wine-visual { aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; }
 .wine-visual img, .winery-card-visual img { width: 100%; height: 100%; display: block; object-fit: cover; }
-.wine-card-copy { padding: var(--card-pad); }
+.wine-visual, .wine-card-copy { width: 100%; border: 0; color: inherit; background: transparent; text-align: left; }
+.wine-visual { cursor: zoom-in; }
+.wine-card-copy { padding: var(--card-pad); cursor: pointer; }
 .wine-card-copy h3 { min-height: 2.35em; }
 .wine-card-copy > strong { line-height: 1.35; }
 .memory-row { width: 100%; min-height: 62px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-3); border: 0; border-bottom: 1px solid #e7ddca; padding: var(--space-3) var(--space-4); color: var(--charcoal); background: transparent; text-align: left; }
@@ -378,8 +383,10 @@ button:not(:disabled):active { transform: translateY(1px); }
 .view-toolbar { margin: var(--space-3) 0; }
 .cellar-results, .winery-grid { margin-top: var(--space-3); }
 .wine-row { min-height: 64px; }
-.winery-card { width: 100%; position: relative; grid-template-columns: 104px minmax(0, 1fr) 20px; align-items: center; gap: var(--space-4); border: 1px solid var(--line); padding: var(--card-pad); color: var(--charcoal); text-align: left; }
+.winery-card { width: 100%; position: relative; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: var(--space-4); border: 1px solid var(--line); padding: var(--card-pad); color: var(--charcoal); text-align: left; }
 .winery-card-visual { width: 104px; aspect-ratio: 1 / 1; min-height: 0; overflow: hidden; }
+.winery-card .winery-card-visual { margin: 0; padding: 0; cursor: zoom-in; }
+.winery-card-copy { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 20px; align-items: center; gap: var(--space-3); border: 0; margin: 0 !important; padding: 0 !important; color: inherit !important; background: transparent; text-align: left; cursor: pointer; }
 .winery-card .card-chevron { color: #a4937b; }
 
 .primary-button, .secondary-button { min-height: var(--control-height); border-radius: 7px; }
@@ -412,6 +419,7 @@ button:not(:disabled):active { transform: translateY(1px); }
 .record-hero { display: grid; justify-items: center; gap: var(--space-2); margin: var(--space-4) 0 var(--space-5); text-align: center; }
 .record-hero-media { width: min(100%, 360px); aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); color: var(--burgundy); background: linear-gradient(145deg, #f4e8d5, #ead6b7); font-size: 52px; }
 .record-hero-media.has-photo { cursor: zoom-in; }
+.record-hero-media.can-add-photo { cursor: pointer; }
 .record-hero-media:disabled { cursor: default; opacity: 1; }
 .record-hero-media img { width: 100%; height: 100%; display: block; object-fit: contain; background: #f2eadc; }
 .record-hero p { margin: 0; color: var(--muted); font-size: 13px; }
@@ -458,14 +466,20 @@ button:not(:disabled):active { transform: translateY(1px); }
 .gallery-image img { aspect-ratio: 4 / 3; height: auto; object-fit: cover; }
 .photo-actions { display: flex; gap: var(--space-2); padding: 0 var(--space-2) var(--space-2); }
 .photo-actions button { min-height: 36px; flex: 1; border: 1px solid #cbbba4; border-radius: 6px; color: var(--burgundy); background: var(--ivory); font-size: 11px; font-weight: 700; }
-.photo-empty { min-height: 220px; display: grid; place-items: center; align-content: center; gap: var(--space-2); margin-top: var(--space-4); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--ivory); }
+.photo-empty { width: 100%; min-height: 220px; display: grid; place-items: center; align-content: center; gap: var(--space-2); margin-top: var(--space-4); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--ivory); font: inherit; cursor: pointer; }
+.photo-empty:disabled { cursor: default; }
 .photo-empty span { color: var(--brass); font-size: 40px; }
 .photo-empty p { margin: 0; }
 .photo-viewer { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: calc(var(--space-5) + env(safe-area-inset-top)) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom)); background: rgba(25, 19, 17, .94); }
 .photo-viewer figure { max-width: min(100%, 1000px); max-height: 100%; margin: 0; display: grid; gap: var(--space-3); justify-items: center; }
 .photo-viewer img { max-width: 100%; max-height: 78dvh; object-fit: contain; }
 .photo-viewer figcaption { color: var(--ivory); }
+.photo-viewer-loading { margin: 0; color: var(--ivory); }
 .photo-viewer-close { position: absolute; top: calc(var(--space-3) + env(safe-area-inset-top)); right: var(--space-3); width: 48px; height: 48px; border: 1px solid rgba(255,255,255,.35); border-radius: 50%; color: white; background: rgba(0,0,0,.3); font-size: 30px; }
+.app-toast { position: fixed; z-index: 100; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); width: max-content; max-width: calc(100% - 32px); padding: 11px 16px; border-radius: 999px; color: white; background: #3b5f48; box-shadow: 0 10px 28px rgba(30,20,15,.28); font-size: 13px; font-weight: 700; text-align: center; transform: translateX(-50%); }
+.app-toast.warning { background: #78571d; }
+
+:where(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid rgba(162, 122, 46, .55); outline-offset: 2px; }
 .document-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); background: var(--ivory); }
 .document-row button { min-height: 58px; border: 0; padding: var(--space-3); color: var(--charcoal); background: transparent; text-align: left; }
 .document-row strong, .document-row small { display: block; }
@@ -545,7 +559,7 @@ button:not(:disabled):active { transform: translateY(1px); }
   .hero { padding: var(--space-5) var(--space-4); }
   .wine-card-copy { padding: var(--space-3); }
   .wine-card-copy h3 { font-size: 17px; }
-  .winery-card { grid-template-columns: 84px minmax(0, 1fr) 18px; gap: var(--space-3); padding: var(--space-3); }
+  .winery-card { grid-template-columns: 84px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3); }
   .winery-card-visual { width: 84px; }
   .fact-grid { grid-template-columns: 1fr 1fr; }
   .gallery { grid-template-columns: 1fr; }
