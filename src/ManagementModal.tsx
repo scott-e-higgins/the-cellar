@@ -91,31 +91,34 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
   const hero = relatedPhotos.find((photo) => photo.isHero) ?? relatedPhotos[0]
   const title = targetTitle(target, data)
   const usesBack = recordTarget || canGoBack
+  const rememberContext = () => contextByTarget.current.set(currentKey, { scrollTop: modalRef.current?.scrollTop ?? 0, tab })
+  const navigateFromCurrent = (next: ManagementTarget) => { rememberContext(); onNavigate(next) }
+  const backFromCurrent = () => { rememberContext(); onBack() }
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
     <section ref={modalRef} className="workflow-modal workflow-form-modal management-modal" role="dialog" aria-modal="true" aria-label={title} onScroll={(event) => { contextByTarget.current.set(currentKey, { scrollTop: event.currentTarget.scrollTop, tab }); if (target.kind === 'enrichment') { enrichmentScroll.current = event.currentTarget.scrollTop; sessionStorage.setItem('cellar.enrichment.scroll', String(event.currentTarget.scrollTop)) } }}>
       <div className="sheet-header detail-header">
-        <button className="icon-close" onClick={usesBack ? onBack : onClose} aria-label={usesBack ? 'Back' : 'Close'}>{usesBack ? '‹' : '×'}</button>
+        <button className="icon-close" onClick={usesBack ? backFromCurrent : onClose} aria-label={usesBack ? 'Back' : 'Close'}>{usesBack ? '‹' : '×'}</button>
         <div><p className="eyebrow burgundy">THE CELLAR</p><h2>{title}</h2></div>
         {recordTarget && editable && (target.kind === 'wine' || target.kind === 'winery') ? <button className="text-button" onClick={() => setEditing((value) => !value)}>{editing ? 'Cancel' : 'Edit'}</button> : <span className="header-spacer" />}
       </div>
       {recordTarget && tabbedRecordTarget && <div className="detail-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => { setTab('details'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'details' }); modalRef.current?.scrollTo({ top: 0 }) }}>Details</button><button className={tab === 'history' ? 'active' : ''} onClick={() => { setTab('history'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'history' }); modalRef.current?.scrollTo({ top: 0 }) }}>History</button><button className={tab === 'photos' ? 'active' : ''} onClick={() => { setTab('photos'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'photos' }); modalRef.current?.scrollTo({ top: 0 }) }}>Photos</button></div>}
       {recordTarget && tab === 'details' && <>
         <RecordHero target={target} data={data} hasPhoto={Boolean(hero)} url={hero ? photoUrls[hero.id] : undefined} editable={editable} onView={() => hero && viewPhoto(hero)} onAdd={() => { setPhotoPrompt(true); setTab('photos') }} />
-        {target.kind === 'wine' && <WineDetails wine={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNavigate={onNavigate} onOpenBottle={onOpenBottle} onEnrichmentAccepted={returnToEnrichment ? onBack : undefined} />}
-        {target.kind === 'winery' && <WineryDetails winery={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNavigate={onNavigate} onEnrichmentAccepted={returnToEnrichment ? onBack : undefined} />}
-        {target.kind === 'opening' && <OpeningDetails opening={target.record} data={data} onNavigate={onNavigate} />}
-        {target.kind === 'purchase' && <PurchaseDetails purchase={target.record} data={data} onNavigate={onNavigate} />}
-        {target.kind === 'gift' && <GiftDetails gift={target.record} data={data} onNavigate={onNavigate} />}
-        {target.kind === 'visit' && <VisitDetails visit={target.record} data={data} onNavigate={onNavigate} />}
+        {target.kind === 'wine' && <WineDetails wine={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNavigate={navigateFromCurrent} onOpenBottle={onOpenBottle} onEnrichmentAccepted={returnToEnrichment ? backFromCurrent : undefined} />}
+        {target.kind === 'winery' && <WineryDetails winery={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNavigate={navigateFromCurrent} onEnrichmentAccepted={returnToEnrichment ? backFromCurrent : undefined} />}
+        {target.kind === 'opening' && <OpeningDetails opening={target.record} data={data} onNavigate={navigateFromCurrent} />}
+        {target.kind === 'purchase' && <PurchaseDetails purchase={target.record} data={data} onNavigate={navigateFromCurrent} />}
+        {target.kind === 'gift' && <GiftDetails gift={target.record} data={data} onNavigate={navigateFromCurrent} />}
+        {target.kind === 'visit' && <VisitDetails visit={target.record} data={data} onNavigate={navigateFromCurrent} />}
       </>}
-      {recordTarget && tabbedRecordTarget && tab === 'history' && <History target={target} data={data} onNavigate={onNavigate} />}
+      {recordTarget && tabbedRecordTarget && tab === 'history' && <History target={target} data={data} onNavigate={navigateFromCurrent} />}
       {recordTarget && tabbedRecordTarget && tab === 'photos' && <PhotoPanel target={target} householdId={householdId} photos={relatedPhotos} urls={photoUrls} editable={editable} busy={busy} autoAdd={photoPrompt} onPrompted={() => setPhotoPrompt(false)} setBusy={setBusy} setMessage={setMessage} onSaved={onSaved} onView={viewPhoto} />}
-      {target.kind === 'history' && <History target={target} data={data} onNavigate={onNavigate} />}
-      {target.kind === 'favorites' && <Favorites data={data} onNavigate={onNavigate} />}
+      {target.kind === 'history' && <History target={target} data={data} onNavigate={navigateFromCurrent} />}
+      {target.kind === 'favorites' && <Favorites data={data} onNavigate={navigateFromCurrent} />}
       {target.kind === 'statistics' && <Statistics data={data} />}
       {target.kind === 'storage' && <Storage data={data} householdId={householdId} editable={editable} onSaved={onSaved} />}
-      {target.kind === 'documents' && <Documents householdId={householdId} data={data} editable={editable} onSaved={onSaved} onNavigate={onNavigate} />}
-      {target.kind === 'enrichment' && <EnrichmentDashboard householdId={householdId} data={data} editable={editable} onSaved={onSaved} kind={enrichmentKind} setKind={setEnrichmentKind} filter={enrichmentFilter} setFilter={setEnrichmentFilter} onNavigate={(kind, id) => { enrichmentScroll.current = modalRef.current?.scrollTop ?? 0; if (kind === 'wine') { const wine = data.wines.find((item) => item.id === id); if (wine) onNavigate({ kind: 'wine', record: wine }) } else { const winery = data.wineries.find((item) => item.id === id); if (winery) onNavigate({ kind: 'winery', record: winery }) } }} />}
+      {target.kind === 'documents' && <Documents householdId={householdId} data={data} editable={editable} onSaved={onSaved} onNavigate={navigateFromCurrent} />}
+      {target.kind === 'enrichment' && <EnrichmentDashboard householdId={householdId} data={data} editable={editable} onSaved={onSaved} kind={enrichmentKind} setKind={setEnrichmentKind} filter={enrichmentFilter} setFilter={setEnrichmentFilter} onNavigate={(kind, id) => { enrichmentScroll.current = modalRef.current?.scrollTop ?? 0; if (kind === 'wine') { const wine = data.wines.find((item) => item.id === id); if (wine) navigateFromCurrent({ kind: 'wine', record: wine }) } else { const winery = data.wineries.find((item) => item.id === id); if (winery) navigateFromCurrent({ kind: 'winery', record: winery }) } }} />}
       {target.kind === 'trips' && <Empty title="Trips will appear when they are genuinely linked" text="The Travel Journal remains independent. This area will stay quiet until controlled two-way trip links are implemented." />}
       {target.kind === 'settings' && <Empty title="Private household collection" text="Authentication, member roles, private photos and documents, installable PWA behavior, and import guardrails are active." />}
       {message && <p className={/saved|uploaded|updated|deleted|accepted/i.test(message) ? 'form-message success' : 'form-message error'} role="status">{message}</p>}
