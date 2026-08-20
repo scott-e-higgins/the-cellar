@@ -7,6 +7,8 @@ import { StateSelect } from './StateSelect'
 import { ClosureSelect } from './ClosureSelect'
 import { userError, validatePhoto } from './lib/user-error'
 import { lotRequiresAgingConfirmation } from './lib/aging-guidance'
+import { finishSuccessfulAction } from './lib/interaction'
+import { ModalLayer } from './OverlayLayer'
 
 const LABELS: Record<QuickAction, string> = {
   'add-wine': 'Add Wine',
@@ -190,9 +192,13 @@ export function WorkflowModal({
         if (error) throw error
       }
 
-      await onSaved()
-      onClose()
-      onNotice(nonBlockingWarning || `${LABELS[action]} saved.`, nonBlockingWarning ? 'warning' : 'success')
+      await finishSuccessfulAction({
+        refresh: onSaved,
+        finish: onClose,
+        notice: onNotice,
+        message: nonBlockingWarning || `${LABELS[action]} saved.`,
+        tone: nonBlockingWarning ? 'warning' : 'success',
+      })
     } catch (error) {
       setMessage(userError(error, 'The record could not be saved. Please try again.'))
     } finally {
@@ -201,8 +207,7 @@ export function WorkflowModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
-      <section className="workflow-modal workflow-form-modal" role="dialog" aria-modal="true" aria-labelledby="workflow-title">
+    <ModalLayer layer="action" onDismiss={onClose} dismissible={!busy} surfaceClassName="workflow-modal workflow-form-modal" ariaLabelledBy="workflow-title">
         <div className="sheet-header">
           <div><p className="eyebrow burgundy">PRIVATE COLLECTION</p><h2 id="workflow-title">{LABELS[action]}</h2></div>
           <button className="icon-close" onClick={onClose} disabled={busy} aria-label="Close">×</button>
@@ -216,8 +221,7 @@ export function WorkflowModal({
           {message && <p className="form-message error" role="alert">{message}</p>}
           <div className="form-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary-button" disabled={busy || blocked}>{busy ? 'Saving…' : 'Save'}</button></div>
         </form>
-      </section>
-    </div>
+    </ModalLayer>
   )
 }
 
