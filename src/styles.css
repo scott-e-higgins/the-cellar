@@ -566,3 +566,20 @@ button:not(:disabled):active { transform: translateY(1px); }
   .online-facts { grid-template-columns: 1fr; }
   .online-facts .wide { grid-column: auto; }
 }
+
+.aging-section { border-color: color-mix(in srgb, var(--brass) 45%, var(--line)); background: linear-gradient(145deg, rgba(184,139,54,.08), transparent 55%); }
+.aging-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--space-3); }
+.aging-heading h3 { margin-bottom:.2rem; }
+.aging-heading p,.guidance-source { margin:0; color:var(--muted); font-size:.86rem; }
+.guidance-status { flex:none; padding:.38rem .65rem; border-radius:999px; font-size:.76rem; font-weight:800; letter-spacing:.035em; text-transform:uppercase; background:#ece4cc; color:#6d5314; }
+.guidance-status.drinking-well { background:#dcecdf; color:#315d3c; }
+.guidance-status.drink-soon { background:#f2dddd; color:#7f263b; }
+.guidance-rationale { margin-bottom:.45rem; }
+.guidance-source a { color:var(--burgundy); font-weight:700; }
+.aging-control { display:grid; gap:var(--space-3); margin-top:var(--space-4); padding-top:var(--space-4); border-top:1px solid var(--line); }
+.aging-control details { display:grid; gap:var(--space-2); }
+.aging-control summary { color:var(--burgundy); font-weight:750; cursor:pointer; min-height:44px; display:flex; align-items:center; }
+.aging-control small { color:var(--muted); }
+.aging-departure-warning { display:flex !important; flex-direction:row !important; align-items:flex-start; gap:.7rem; padding:1rem; border:1px solid var(--brass); background:#fff7df; border-radius:var(--radius-card); color:var(--charcoal); }
+.aging-departure-warning input { width:22px; height:22px; flex:none; margin-top:.1rem; accent-color:var(--burgundy); }
+.aging-departure-warning strong { display:block; color:var(--burgundy); }
