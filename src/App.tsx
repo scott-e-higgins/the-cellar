@@ -10,6 +10,7 @@ import { userError } from './lib/user-error'
 import { OVERLAY_Z_INDEX } from './lib/interaction'
 import { LightboxLayer, ModalLayer } from './OverlayLayer'
 import { restoredManagementStack } from './lib/overlay-history'
+import { StarRatingDisplay } from './StarRating'
 
 const QUICK_ACTIONS: Array<{ id: QuickAction; label: string; hint: string; icon: IconName }> = [
   { id: 'add-wine', label: 'Add Wine', hint: 'Create a wine definition', icon: 'bottle' },
@@ -462,7 +463,7 @@ function WineCard({ wine, hasPhoto, photoUrl, onOpen }: { wine: WineRecord; hasP
   return (
     <article className="wine-card brass-corners">
       <button className={`wine-visual ${hasPhoto ? 'has-photo' : ''}`} onClick={onOpen} aria-label={`Open ${wine.name}`}>{photoUrl ? <img src={photoUrl} alt="" /> : hasPhoto ? <span>Loading photo…</span> : <><Icon name="bottle" size={47}/><span>{wine.category || wine.style || 'WINE'}</span></>}</button>
-      <button className="wine-card-copy" onClick={onOpen} aria-label={`Open ${wine.name}`}><p className="eyebrow burgundy">{wine.wineryName || 'INDEPENDENT WINE'}</p><h3>{wine.name}</h3><p className="wine-card-vintage">{wineVintage(wine)}</p><strong>{wine.availableQuantity} available{wine.storageNames.length ? ` · ${wine.storageNames.join(', ')}` : ''}</strong><WineIndicators wine={wine} /></button>
+      <button className="wine-card-copy" onClick={onOpen} aria-label={`Open ${wine.name}`}><p className="eyebrow burgundy">{wine.wineryName || 'INDEPENDENT WINE'}</p><h3>{wine.name}</h3><p className="wine-card-vintage">{wineVintage(wine)}</p><strong>{wine.availableQuantity} available{wine.storageNames.length ? ` · ${wine.storageNames.join(', ')}` : ''}</strong>{wine.averageRating !== null && <StarRatingDisplay value={wine.averageRating} compact />}<WineIndicators wine={wine} /></button>
     </article>
   )
 }
@@ -473,7 +474,7 @@ function WineIndicators({ wine }: { wine: WineRecord }) {
 }
 
 function WineRow({ wine, onClick }: { wine: WineRecord; onClick: () => void }) {
-  return <button className="wine-row" onClick={onClick}><span className="row-icon"><Icon name="bottle"/></span><div><strong>{wine.name}</strong><small>{wine.wineryName || 'Winery not set'} · <b>{wineVintage(wine)}</b></small><WineIndicators wine={wine} /></div><span className="quantity-pill">{wine.availableQuantity}</span></button>
+  return <button className="wine-row" onClick={onClick}><span className="row-icon"><Icon name="bottle"/></span><div><strong>{wine.name}</strong><small>{wine.wineryName || 'Winery not set'} · <b>{wineVintage(wine)}</b></small>{wine.averageRating !== null && <StarRatingDisplay value={wine.averageRating} compact />}<WineIndicators wine={wine} /></div><span className="quantity-pill">{wine.availableQuantity}</span></button>
 }
 
 function wineryPlace(winery: WineryRecord) {
