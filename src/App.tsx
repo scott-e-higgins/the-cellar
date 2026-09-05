@@ -279,6 +279,15 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   const pushOverlay = (cellarOverlay: object) => window.history.pushState({ ...window.history.state, cellarOverlay }, '')
   const openManagement = (target: ManagementTarget) => { const stack = [target]; setManagementStack(stack); pushOverlay({ type: 'management', stack }) }
   const navigateManagement = (target: ManagementTarget) => { setManagementStack((current) => { const stack = [...current, target]; pushOverlay({ type: 'management', stack }); return stack }) }
+  const returnToWineryAfterVisitDelete = (wineryId: string) => {
+    const winery = data.wineries.find((item) => item.id === wineryId)
+    const previousTarget = managementStack.at(-2)
+    if (!winery) { closeManagement(); return }
+    if (previousTarget?.kind === 'winery' && previousTarget.record.id === wineryId) { window.history.back(); return }
+    const stack: ManagementTarget[] = [{ kind: 'winery', record: winery }]
+    setManagementStack(stack)
+    window.history.replaceState({ ...window.history.state, cellarOverlay: { type: 'management', stack } }, '')
+  }
   const closeManagement = () => { if (managementStack.length) window.history.go(-managementStack.length); else setManagementStack([]) }
   const showCardPhoto = (photo: PhotoRecord) => { setCardPhoto(photo); pushOverlay({ type: 'card-photo', photo }) }
 
@@ -354,7 +363,7 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       <BottomNav view={view} go={go} onQuick={() => { setQuickOpen(true); pushOverlay({ type: 'quick' }) }} />
       {quickOpen && <QuickActions onClose={() => window.history.back()} onSelect={startAction} />}
       {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
-      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
+      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onVisitDeleted={returnToWineryAfterVisitDelete} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
       {cardPhoto && <CardPhotoViewer photo={cardPhoto} url={photoUrls[cardPhoto.id]} onClose={() => window.history.back()} />}
       {toast && <div className={`app-toast ${toast.tone}`} style={{ zIndex: OVERLAY_Z_INDEX.toast }} role="status">{toast.message}</div>}
     </div>
