@@ -182,15 +182,34 @@ export function WorkflowModal({
       }
 
       if (action === 'add-winery-visit') {
-        const { error } = await supabase.from('winery_visits').insert({
+        const { data: createdVisit, error } = await supabase.from('winery_visits').insert({
           household_id: householdId,
           winery_id: String(form.get('winery_id')),
           visit_date: String(form.get('visit_date')),
           notes: optional(form, 'notes'),
           favorite: form.get('favorite') === 'on',
           would_visit_again: optional(form, 'would_visit_again'),
-        })
+        }).select('id').single()
         if (error) throw error
+        const visitId = String(createdVisit.id), tripId = optional(form, 'trip_id')
+        if (tripId) {
+          const trip = data.trips.find((item) => item.id === tripId)
+          if (!trip) throw new Error('Choose a valid Travel Journal trip.')
+          const linked = await supabase.from('travel_references').insert({ household_id: householdId, winery_visit_id: visitId, external_system: 'travel-journal', external_entity_type: 'trip', external_id: trip.id, display_label: trip.name, deep_link_path: null })
+          if (linked.error) { await supabase.from('winery_visits').delete().eq('household_id', householdId).eq('id', visitId); throw linked.error }
+        }
+        const photo = form.get('photo')
+        if (photo instanceof File && photo.size > 0) {
+          validatePhoto(photo)
+          const cleanName = photo.name.replace(/[^a-zA-Z0-9._-]/g, '_'), storagePath = `${householdId}/visits/${visitId}/${createUniqueId()}-${cleanName}`
+          const upload = await supabase.storage.from('cellar-photos').upload(storagePath, photo, { contentType: photo.type, upsert: false })
+          if (upload.error) nonBlockingWarning = 'The visit was saved, but its photo could not be uploaded. You can add it from the visit.'
+          else {
+            const photographedOn = optional(form, 'photographed_at')
+            const saved = await supabase.from('photos').insert({ household_id: householdId, winery_visit_id: visitId, storage_path: storagePath, original_filename: photo.name, mime_type: photo.type, file_size_bytes: photo.size, caption: optional(form, 'photo_caption'), photographed_at: photographedOn ? `${photographedOn}T12:00:00` : null, is_hero: true })
+            if (saved.error) { await supabase.storage.from('cellar-photos').remove([storagePath]); nonBlockingWarning = 'The visit was saved, but its photo could not be attached. You can add it from the visit.' }
+          }
+        }
       }
 
       await finishSuccessfulAction({
@@ -268,7 +287,7 @@ function ChoiceToggle({ name, label, value, options, onChange }: { name:string; 
 
 function VisitFields({ data }: { data: CellarData }) {
   if (!data.wineries.length) return <Prerequisite message="Add the winery before recording a visit." />
-  return <><label>Winery<select name="winery_id" required defaultValue=""><option value="" disabled>Select a winery</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Visit date" name="visit_date" type="date" defaultValue={localDate()} required /><Notes label="Visit memories" /><details className="more-details"><summary>More details</summary><div className="details-fields"><label>Would visit again<select name="would_visit_again"><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="check-field"><input name="favorite" type="checkbox" /> Favorite visit</label></div></details></>
+  return <><label>Winery<select name="winery_id" required defaultValue=""><option value="" disabled>Select a winery</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Visit date" name="visit_date" type="date" defaultValue={localDate()} required /><label>Travel Journal trip<select name="trip_id" defaultValue=""><option value="">No linked trip</option>{data.trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.name} · {trip.startDate}</option>)}</select></label><Notes label="Visit memories" /><label className="photo-picker"><span className="photo-picker-icon" aria-hidden="true">📷</span><span><strong>Visit photo</strong><small>Optional hero photo</small></span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" /></label><div className="field-grid"><Field label="Photo caption" name="photo_caption" /><Field label="Photo date" name="photographed_at" type="date" /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><label>Would visit again<select name="would_visit_again"><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="check-field"><input name="favorite" type="checkbox" /> Favorite visit</label></div></details></>
 }
 
 function PersonSelect({ name, label, data }: { name: string; label: string; data: CellarData }) {
