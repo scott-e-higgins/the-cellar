@@ -41,6 +41,8 @@ type IconName =
   | 'chevron'
   | 'close'
 
+type ActionContext = { wineryId?: string | null; visitId?: string | null; date?: string | null; tripId?: string | null }
+
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
     home: <><path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10.5V20h11v-9.5M10 20v-6h4v6"/></>,
@@ -231,6 +233,7 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   const [quickOpen, setQuickOpen] = useState(false)
   const [activeAction, setActiveAction] = useState<QuickAction | null>(null)
   const [openingWineId, setOpeningWineId] = useState<string | null>(null)
+  const [actionContext, setActionContext] = useState<ActionContext>({})
   const [data, setData] = useState<CellarData>(EMPTY_CELLAR_DATA)
   const [dataLoading, setDataLoading] = useState(!preview)
   const [dataError, setDataError] = useState('')
@@ -246,10 +249,11 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   useEffect(() => {
     window.history.replaceState({ ...window.history.state, cellarOverlay: null }, '')
     const restoreOverlay = (state: unknown) => {
-      const overlay = (state as { cellarOverlay?: { type?: string; stack?: ManagementTarget[]; underlayStack?: ManagementTarget[]; action?: QuickAction; wineId?: string | null; photo?: PhotoRecord } } | null)?.cellarOverlay
+      const overlay = (state as { cellarOverlay?: { type?: string; stack?: ManagementTarget[]; underlayStack?: ManagementTarget[]; action?: QuickAction; wineId?: string | null; context?: ActionContext; photo?: PhotoRecord } } | null)?.cellarOverlay
       setQuickOpen(overlay?.type === 'quick')
       setActiveAction(overlay?.type === 'action' ? overlay.action ?? null : null)
       setOpeningWineId(overlay?.type === 'action' ? overlay.wineId ?? null : null)
+      setActionContext(overlay?.type === 'action' ? overlay.context ?? {} : {})
       setManagementStack(restoredManagementStack(overlay))
       setCardPhoto(overlay?.type === 'card-photo' ? overlay.photo ?? null : null)
     }
@@ -331,16 +335,17 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   }, [data.photos])
 
   const title = useMemo(() => ({ home: 'The Cellar', cellar: 'Our Cellar', wineries: 'Wineries', more: 'More' })[view], [view])
-  const startAction = (action: QuickAction, wineId: string | null = null) => {
+  const startAction = (action: QuickAction, wineId: string | null = null, context: ActionContext = {}) => {
     if (household.role === 'viewer') {
       setDataError('This account has view-only access. An owner can change that in household membership.')
       return
     }
-    const overlay = { type: 'action', action, wineId: action === 'open-bottle' ? wineId : null, underlayStack: managementStack }
+    const overlay = { type: 'action', action, wineId: action === 'open-bottle' ? wineId : null, context, underlayStack: managementStack }
     if (quickOpen) window.history.replaceState({ ...window.history.state, cellarOverlay: overlay }, '')
     else pushOverlay(overlay)
     setQuickOpen(false)
     setOpeningWineId(action === 'open-bottle' ? wineId : null)
+    setActionContext(context)
     setActiveAction(action)
   }
 
@@ -362,8 +367,8 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       </main>
       <BottomNav view={view} go={go} onQuick={() => { setQuickOpen(true); pushOverlay({ type: 'quick' }) }} />
       {quickOpen && <QuickActions onClose={() => window.history.back()} onSelect={startAction} />}
-      {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
-      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onVisitDeleted={returnToWineryAfterVisitDelete} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
+      {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} initialWineryId={actionContext.wineryId} initialVisitId={actionContext.visitId} initialDate={actionContext.date} initialTripId={actionContext.tripId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
+      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onVisitDeleted={returnToWineryAfterVisitDelete} onAddVisit={(wineryId) => startAction('add-winery-visit', null, { wineryId })} onAddPurchase={(visit, tripId) => startAction('record-purchase', null, { wineryId: visit.wineryId, visitId: visit.id, date: visit.visitDate, tripId })} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
       {cardPhoto && <CardPhotoViewer photo={cardPhoto} url={photoUrls[cardPhoto.id]} onClose={() => window.history.back()} />}
       {toast && <div className={`app-toast ${toast.tone}`} style={{ zIndex: OVERLAY_Z_INDEX.toast }} role="status">{toast.message}</div>}
     </div>
