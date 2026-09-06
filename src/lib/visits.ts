@@ -1,4 +1,4 @@
-import type { CellarData, TripRecord, WineRecord } from './cellar-data'
+import type { CellarData, PurchaseRecord, TripRecord, VisitRecord, WineRecord } from './cellar-data'
 
 export function photosForVisit(data: CellarData, visitId: string) {
   return data.photos.filter((photo) => photo.wineryVisitId === visitId)
@@ -17,4 +17,16 @@ export function winesForVisit(data: CellarData, visitId: string): WineRecord[] {
 
 export function visitCanBeDeleted(data: CellarData, visitId: string) {
   return !data.purchases.some((purchase) => purchase.wineryVisitId === visitId)
+}
+
+export function bottlesPurchasedForVisit(data: CellarData, visitId: string) {
+  const purchaseIds = new Set(data.purchases.filter((purchase) => purchase.wineryVisitId === visitId).map((purchase) => purchase.id))
+  return data.purchaseItems.filter((item) => purchaseIds.has(item.purchaseId)).reduce((sum, item) => sum + item.quantity, 0)
+}
+
+export function unlinkedPurchasesForVisit(data: CellarData, visit: VisitRecord): PurchaseRecord[] {
+  const relevantPurchaseIds = new Set(data.purchaseItems.filter((item) => data.wines.find((wine) => wine.id === item.wineId)?.wineryId === visit.wineryId).map((item) => item.purchaseId))
+  const visitTime = new Date(`${visit.visitDate}T12:00:00`).getTime()
+  const distance = (purchase: PurchaseRecord) => purchase.acquisitionDate ? Math.abs(new Date(`${purchase.acquisitionDate}T12:00:00`).getTime() - visitTime) : Number.MAX_SAFE_INTEGER
+  return data.purchases.filter((purchase) => purchase.acquisitionType === 'purchased' && !purchase.wineryVisitId && relevantPurchaseIds.has(purchase.id)).sort((left, right) => distance(left) - distance(right))
 }
