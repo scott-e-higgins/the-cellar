@@ -12,5 +12,5 @@ export function userError(error: unknown, fallback = 'That could not be complete
 export function validatePhoto(file: File) {
   if (file.size > 20 * 1024 * 1024) throw new Error('That photo is too large. Choose a photo smaller than 20 MB.')
   const supportedExtension = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)
-  if (file.type && !file.type.startsWith('image/') && !supportedExtension) throw new Error('Choose a JPEG, PNG, WebP, or HEIC photo.')
+  if (!supportedExtension && !/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type)) throw new Error('Choose a JPEG, PNG, WebP, or HEIC photo.')
 }

@@ -1,3 +1,5 @@
+import { markFormSaved } from './unsaved-changes'
+
 export type NoticeTone = 'success' | 'warning'
 
 export const OVERLAY_Z_INDEX = {
@@ -9,18 +11,29 @@ export const OVERLAY_Z_INDEX = {
 
 export async function finishSuccessfulAction({
   refresh,
+  form,
   finish,
   notice,
   message,
   tone = 'success',
 }: {
+  form?: HTMLFormElement | null
   refresh: () => Promise<void>
   finish?: () => void
   notice: (message: string, tone?: NoticeTone) => void
   message: string
   tone?: NoticeTone
 }) {
-  await refresh()
+  markFormSaved(form)
+  try {
+    await refresh()
+  } catch {
+    finish?.()
+    markFormSaved(form)
+    notice(`Saved, but the screen could not refresh.${tone === 'warning' ? ` ${message}` : ''}`, 'warning')
+    return
+  }
   finish?.()
+  markFormSaved(form)
   notice(message, tone)
 }

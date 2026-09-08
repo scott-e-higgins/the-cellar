@@ -659,3 +659,11 @@ button:not(:disabled):active { transform: translateY(1px); }
 .aging-departure-warning { display:flex !important; flex-direction:row !important; align-items:flex-start; gap:.7rem; padding:1rem; border:1px solid var(--brass); background:#fff7df; border-radius:var(--radius-card); color:var(--charcoal); }
 .aging-departure-warning input { width:22px; height:22px; flex:none; margin-top:.1rem; accent-color:var(--burgundy); }
 .aging-departure-warning strong { display:block; color:var(--burgundy); }
+
+/* Pass 1: preserve the form layout while locking completed records. */
+.workflow-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: contents; }
+.workflow-fields[hidden] { display: none; }
+.header-tools { display: flex; align-items: center; gap: 12px; }
+.data-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.data-error button, .toast-actions button { min-height: 44px; padding: 8px 12px; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.toast-actions { display: flex; gap: 12px; margin-top: 10px; }

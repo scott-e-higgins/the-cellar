@@ -1,3 +1,4 @@
+import { confirmAbandon, useFormGuard } from './lib/unsaved-changes'
 import { KeyboardEvent, ReactNode, Ref, RefObject, UIEventHandler, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { OVERLAY_Z_INDEX } from './lib/interaction'
@@ -69,13 +70,17 @@ export function ModalLayer({
   onSurfaceScroll?: UIEventHandler<HTMLElement>
   children: ReactNode
 }) {
-  const modal = useModalFocus(onDismiss, dismissible, surfaceRef)
+  const internalSurface = useRef<HTMLElement | null>(null)
+  const guardedSurface = surfaceRef ?? internalSurface
+  useFormGuard(guardedSurface, OVERLAY_Z_INDEX[layer], !dismissible)
+  const dismiss = () => { if (confirmAbandon()) onDismiss() }
+  const modal = useModalFocus(dismiss, dismissible, guardedSurface)
   return createPortal(
     <div
       className={`modal-backdrop modal-layer-${layer}`}
       style={{ zIndex: OVERLAY_Z_INDEX[layer] }}
       role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && dismissible && onDismiss()}
+      onMouseDown={(event) => event.target === event.currentTarget && dismissible && dismiss()}
     >
       <section
         ref={modal.assignRef}
@@ -96,7 +101,9 @@ export function ModalLayer({
 }
 
 export function LightboxLayer({ ariaLabel, onDismiss, children }: { ariaLabel: string; onDismiss: () => void; children: ReactNode }) {
-  const modal = useModalFocus(onDismiss, true)
+  const surface = useRef<HTMLElement | null>(null)
+  useFormGuard(surface, OVERLAY_Z_INDEX.lightbox, false)
+  const modal = useModalFocus(onDismiss, true, surface)
   return createPortal(
     <div
       ref={modal.assignRef as Ref<HTMLDivElement>}
