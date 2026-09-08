@@ -17,7 +17,7 @@ import { PhotoPicker } from './PhotoPicker'
 const LABELS: Record<QuickAction, string> = {
   'add-wine': 'Add Wine',
   'record-purchase': 'Add Bottles',
-  'open-bottle': 'Bottle Leaving',
+  'open-bottle': 'Open / Gift Bottle',
   'add-winery': 'Add Winery',
   'add-winery-visit': 'Add Winery Visit',
 }
