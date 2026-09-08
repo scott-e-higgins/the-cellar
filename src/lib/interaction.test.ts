@@ -19,16 +19,16 @@ describe('shared interaction behavior', () => {
     expect(calls).toEqual(['refresh', 'finish', 'notice'])
   })
 
-  it('does not close or report success when refresh fails', async () => {
-    const finish = vi.fn()
+  it('finishes a successful mutation even if refresh fails, and reports the distinction', async () => {
+    const finish = vi.fn(), notice = vi.fn()
+    await finishSuccessfulAction({ refresh: vi.fn().mockRejectedValue(new Error('offline')), finish, notice, message: 'Saved.' })
+    expect(finish).toHaveBeenCalledOnce()
+    expect(notice).toHaveBeenCalledWith('Saved, but the screen could not refresh.', 'warning')
+  })
+
+  it('preserves attachment warnings when refresh also fails', async () => {
     const notice = vi.fn()
-    await expect(finishSuccessfulAction({
-      refresh: vi.fn(async () => { throw new Error('refresh failed') }),
-      finish,
-      notice,
-      message: 'Saved.',
-    })).rejects.toThrow('refresh failed')
-    expect(finish).not.toHaveBeenCalled()
-    expect(notice).not.toHaveBeenCalled()
+    await finishSuccessfulAction({ refresh: vi.fn().mockRejectedValue(new Error('offline')), notice, message: 'Record saved; photo not added.', tone: 'warning' })
+    expect(notice).toHaveBeenCalledWith('Saved, but the screen could not refresh. Record saved; photo not added.', 'warning')
   })
 })

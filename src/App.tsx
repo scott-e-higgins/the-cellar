@@ -1,3 +1,4 @@
+import { confirmAbandon, pushCellarHistory } from './lib/unsaved-changes'
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { WorkflowModal } from './WorkflowModal'
@@ -84,12 +85,14 @@ function useHashView() {
   const [view, setView] = useState<NavView>(read)
   useEffect(() => {
     const sync = () => setView(read())
-    window.addEventListener('hashchange', sync)
-    return () => window.removeEventListener('hashchange', sync)
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
   }, [])
   const go = (next: NavView) => {
-    window.location.hash = `/${next}`
+    if (!confirmAbandon()) return
+    pushCellarHistory({ ...window.history.state, cellarOverlay: null }, `#/${next}`)
     setView(next)
+    window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }))
   }
   return { view, go }
 }
@@ -228,7 +231,7 @@ function currentTarget(target: ManagementTarget | null, data: CellarData) {
   return { ...target, record: data.visits.find((item) => item.id === target.record.id) ?? target.record }
 }
 
-function CellarShell({ household, preview = false, onSignOut }: { household: HouseholdContext; preview?: boolean; onSignOut: () => void }) {
+export function CellarShell({ household, preview = false, onSignOut }: { household: HouseholdContext; preview?: boolean; onSignOut: () => void }) {
   const { view, go } = useHashView()
   const [quickOpen, setQuickOpen] = useState(false)
   const [activeAction, setActiveAction] = useState<QuickAction | null>(null)
@@ -275,12 +278,12 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
   }, [overlayOpen])
 
   useEffect(() => {
-    if (!toast) return
+    if (!toast || toast.tone === 'warning') return
     const timer = window.setTimeout(() => setToast(null), 3200)
     return () => window.clearTimeout(timer)
   }, [toast])
 
-  const pushOverlay = (cellarOverlay: object) => window.history.pushState({ ...window.history.state, cellarOverlay }, '')
+  const pushOverlay = (cellarOverlay: object) => pushCellarHistory({ ...window.history.state, cellarOverlay })
   const openManagement = (target: ManagementTarget) => { const stack = [target]; setManagementStack(stack); pushOverlay({ type: 'management', stack }) }
   const navigateManagement = (target: ManagementTarget) => { setManagementStack((current) => { const stack = [...current, target]; pushOverlay({ type: 'management', stack }); return stack }) }
   const returnToWineryAfterVisitDelete = (wineryId: string) => {
@@ -306,14 +309,15 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
     try {
       setData(await loadCellarData(supabase, household.householdId))
     } catch (error) {
-      setDataError(userError(error, 'The collection could not be loaded. Pull down or reopen The Cellar to try again.'))
+      setDataError(userError(error, 'The collection could not be loaded. Retry Refresh to try again.'))
+      throw error
     } finally {
       setDataLoading(false)
     }
   }, [household.householdId, preview])
 
   useEffect(() => {
-    void refresh()
+    void refresh().catch(() => {})
   }, [refresh])
 
   useEffect(() => {
@@ -354,15 +358,15 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       <header className="app-header">
         <div className="header-inner">
           <div><p className="eyebrow">OUR HOUSEHOLD</p><h1>{title}</h1>{view === 'home' && <p className="header-subtitle">Our wine collection &amp; memories</p>}</div>
-          <BrandMark />
+          <div className="header-tools"><button className="text-button" data-keep-draft disabled={dataLoading} onClick={() => void refresh().catch(() => {})}>{dataLoading ? 'Refreshing…' : 'Refresh'}</button><BrandMark /></div>
         </div>
       </header>
       {preview && <div className="preview-banner">Visual preview - no production wine data</div>}
-      {dataError && <button className="data-error" onClick={() => setDataError('')}>{dataError} <span>Dismiss</span></button>}
+      {dataError && <div className="data-error" role="alert"><span>{dataError}</span><button data-keep-draft disabled={dataLoading} onClick={() => void refresh().catch(() => {})}>{dataLoading ? 'Refreshing…' : 'Retry Refresh'}</button></div>}
       <main ref={mainScrollRef} className="app-scroll" onScroll={(event) => { viewScroll.current[view] = event.currentTarget.scrollTop }}>
-        <div hidden={view !== 'home'}><HomeView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} go={go} onAdd={() => startAction('add-wine')} onManage={openManagement} /></div>
-        <div hidden={view !== 'cellar'}><CellarView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-wine')} onManage={openManagement} /></div>
-        <div hidden={view !== 'wineries'}><WineriesView data={data} loading={dataLoading} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-winery')} onManage={openManagement} /></div>
+        <div hidden={view !== 'home'}><HomeView data={data} loading={dataLoading && !data.wines.length && !data.wineries.length} photoUrls={photoUrls} editable={household.role !== 'viewer'} go={go} onAdd={() => startAction('add-wine')} onManage={openManagement} /></div>
+        <div hidden={view !== 'cellar'}><CellarView data={data} loading={dataLoading && !data.wines.length && !data.wineries.length} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-wine')} onManage={openManagement} /></div>
+        <div hidden={view !== 'wineries'}><WineriesView data={data} loading={dataLoading && !data.wines.length && !data.wineries.length} photoUrls={photoUrls} editable={household.role !== 'viewer'} onAdd={() => startAction('add-winery')} onManage={openManagement} /></div>
         <div hidden={view !== 'more'}><MoreView household={household} onSignOut={onSignOut} onManage={openManagement} /></div>
       </main>
       <BottomNav view={view} go={go} onQuick={() => { setQuickOpen(true); pushOverlay({ type: 'quick' }) }} />
@@ -370,7 +374,7 @@ function CellarShell({ household, preview = false, onSignOut }: { household: Hou
       {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} initialWineryId={actionContext.wineryId} initialVisitId={actionContext.visitId} initialDate={actionContext.date} initialTripId={actionContext.tripId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
       {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onVisitDeleted={returnToWineryAfterVisitDelete} onAddVisit={(wineryId) => startAction('add-winery-visit', null, { wineryId })} onAddPurchase={(visit, tripId) => startAction('record-purchase', null, { wineryId: visit.wineryId, visitId: visit.id, date: visit.visitDate, tripId })} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
       {cardPhoto && <CardPhotoViewer photo={cardPhoto} url={photoUrls[cardPhoto.id]} onClose={() => window.history.back()} />}
-      {toast && <div className={`app-toast ${toast.tone}`} style={{ zIndex: OVERLAY_Z_INDEX.toast }} role="status">{toast.message}</div>}
+      {toast && <div className={`app-toast ${toast.tone}`} style={{ zIndex: OVERLAY_Z_INDEX.toast }} role="status">{toast.message}{toast.tone === 'warning' && <div className="toast-actions">{dataError && <button data-keep-draft disabled={dataLoading} onClick={() => void refresh().then(() => setToast(null)).catch(() => {})}>{dataLoading ? 'Refreshing…' : 'Retry Refresh'}</button>}<button data-keep-draft onClick={() => setToast(null)}>Dismiss</button></div>}</div>}
     </div>
   )
 }
