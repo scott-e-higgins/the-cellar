@@ -1,3 +1,4 @@
+import { wineClassification } from './lib/wine-classification'
 import { confirmAbandon, pushCellarHistory } from './lib/unsaved-changes'
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
@@ -14,7 +15,7 @@ import { restoredManagementStack } from './lib/overlay-history'
 import { StarRatingDisplay } from './StarRating'
 
 const QUICK_ACTIONS: Array<{ id: QuickAction; label: string; hint: string; icon: IconName }> = [
-  { id: 'add-wine', label: 'Add Wine', hint: 'Create a wine definition', icon: 'bottle' },
+  { id: 'add-wine', label: 'Add Wine', hint: 'Add a wine and its bottles', icon: 'bottle' },
   { id: 'record-purchase', label: 'Add Bottles', hint: 'Purchased or received as a gift', icon: 'receipt' },
   { id: 'open-bottle', label: 'Bottle Leaving', hint: 'Opened or given as a gift', icon: 'open' },
   { id: 'add-winery', label: 'Add Winery', hint: 'Create a winery profile', icon: 'winery' },
@@ -392,7 +393,7 @@ function HomeView({ data, loading, photoUrls, editable, go, onAdd, onManage }: {
         <SnapshotCard value={loading ? '—' : data.snapshot.wineriesRepresented.toString()} label="Wineries" />
       </section>
       <SectionHeading title="Recently Added" action={recent.length ? 'See all' : undefined} onAction={() => go('cellar')} />
-      {loading ? <CollectionLoading label="Loading recent wines…" /> : recent.length ? <div className="wine-card-grid home-wine-grid">{recent.map((wine) => { const photo = heroPhotoFor('wine', wine.id, data); return <WineCard key={wine.id} wine={wine} hasPhoto={Boolean(photo)} photoUrl={photo ? photoUrls[photo.id] : undefined} onOpen={() => onManage({ kind: 'wine', record: wine })} /> })}</div> : <EmptyFeature icon="bottle" title="Your first bottles will appear here" body="Start the collection with your first wine." action={editable ? 'Add Wine' : undefined} onAction={onAdd} />}
+      {loading ? <CollectionLoading label="Loading recent wines…" /> : recent.length ? <div className="wine-card-grid home-wine-grid">{recent.map((wine) => { const photo = heroPhotoFor('wine', wine.id, data); return <WineCard key={wine.id} data={data} wine={wine} hasPhoto={Boolean(photo)} photoUrl={photo ? photoUrls[photo.id] : undefined} onOpen={() => onManage({ kind: 'wine', record: wine })} /> })}</div> : <EmptyFeature icon="bottle" title="Your first bottles will appear here" body="Start the collection with your first wine." action={editable ? 'Add Wine' : undefined} onAction={onAdd} />}
       {recentOpenings.length > 0 && <><SectionHeading title="Recent Memories" action="History" onAction={() => onManage({ kind: 'history' })} /><div className="compact-list">{recentOpenings.map((opening) => { const wine = data.wines.find((item) => item.id === opening.wineId); return <button className="memory-row" key={opening.id} onClick={() => onManage({ kind: 'opening', record: opening })}><span><strong>{wine?.name ?? 'Bottle opening'}</strong><small>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(opening.openedAt))}{opening.openedBy ? ` · ${opening.openedBy}` : ''}</small></span><Icon name="chevron" size={18}/></button> })}</div></>}
     </div>
   )
@@ -424,15 +425,16 @@ function CellarView({ data, loading, photoUrls, editable, onAdd, onManage }: { d
   const [buyAgainOnly, setBuyAgainOnly] = useState(false)
   const [agingOnly, setAgingOnly] = useState(false)
   const wines = data.wines.filter((wine) => {
+    const classification=wineClassification(wine,data)
     if (availability === 'available' && wine.availableQuantity <= 0) return false
     if (availability === 'consumed' && wine.availableQuantity > 0) return false
     if (wineryFilter && wine.wineryId !== wineryFilter) return false
-    if (styleFilter && wine.style !== styleFilter && wine.category !== styleFilter) return false
+    if (styleFilter && classification.style !== styleFilter && classification.category !== styleFilter) return false
     if (storageFilter && !wine.storageNames.includes(storageFilter)) return false
     if (favoriteOnly && !wine.favorite && !data.preferences.some(p => p.wineId === wine.id && p.favorite)) return false
     if (buyAgainOnly && !wine.buyAgain.includes('yes')) return false
     if (agingOnly && wine.agingCount <= 0) return false
-    const haystack = [wine.name,wine.wineryName,wine.vintage,wine.style,wine.category,wine.blendDescription,wine.sweetness,wine.country,wine.state,wine.region,wine.appellation,wine.vineyard,wine.closure,...wine.storageNames,...wine.selectorNames].filter(Boolean).join(' ').toLowerCase()
+    const haystack = [wine.name,wine.wineryName,wine.vintage,classification.style,classification.category,wine.blendDescription,wine.sweetness,wine.country,wine.state,wine.region,wine.appellation,wine.vineyard,wine.closure,...wine.storageNames,...wine.selectorNames].filter(Boolean).join(' ').toLowerCase()
     return haystack.includes(search.trim().toLowerCase())
   })
   const filterCount = [wineryFilter,styleFilter,storageFilter,favoriteOnly,buyAgainOnly,agingOnly].filter(Boolean).length
@@ -441,12 +443,12 @@ function CellarView({ data, loading, photoUrls, editable, onAdd, onManage }: { d
       <div className="screen-lead"><div><p className="eyebrow burgundy">INVENTORY</p><h2>{loading ? 'Loading…' : `${data.snapshot.currentBottles} bottles`}</h2></div></div>
       <label className="search-box"><Icon name="search" size={20}/><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search wine, winery, vintage, varietal..." aria-label="Search the cellar" /></label>
       <button className="filter-button" onClick={() => setFiltersOpen(value => !value)}>Filters {filterCount > 0 && <span className="filter-count">{filterCount}</span>}<Icon name="chevron" size={17}/></button>
-      {filtersOpen && <section className="filter-panel"><label>Winery<select value={wineryFilter} onChange={e=>setWineryFilter(e.target.value)}><option value="">All wineries</option>{data.wineries.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label>Style / category<select value={styleFilter} onChange={e=>setStyleFilter(e.target.value)}><option value="">All styles</option>{[...new Set(data.wines.flatMap(w=>[w.style,w.category]).filter(Boolean) as string[])].sort().map(v=><option key={v}>{v}</option>)}</select></label><label>Storage<select value={storageFilter} onChange={e=>setStorageFilter(e.target.value)}><option value="">All locations</option>{data.locations.map(l=><option key={l.id} value={l.name}>{l.name}</option>)}</select></label><label className="check-field"><input type="checkbox" checked={favoriteOnly} onChange={e=>setFavoriteOnly(e.target.checked)}/> Favorites only</label><label className="check-field"><input type="checkbox" checked={buyAgainOnly} onChange={e=>setBuyAgainOnly(e.target.checked)}/> Buy Again: Yes</label><label className="check-field"><input type="checkbox" checked={agingOnly} onChange={e=>setAgingOnly(e.target.checked)}/> Aging only</label><button onClick={()=>{setWineryFilter('');setStyleFilter('');setStorageFilter('');setFavoriteOnly(false);setBuyAgainOnly(false);setAgingOnly(false)}}>Clear filters</button></section>}
+      {filtersOpen && <section className="filter-panel"><label>Winery<select value={wineryFilter} onChange={e=>setWineryFilter(e.target.value)}><option value="">All wineries</option>{data.wineries.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label>Style / category<select value={styleFilter} onChange={e=>setStyleFilter(e.target.value)}><option value="">All styles</option>{[...new Set(data.wines.flatMap(w=>{const c=wineClassification(w,data);return [c.style,c.category]}).filter(Boolean) as string[])].sort().map(v=><option key={v}>{v}</option>)}</select></label><label>Storage<select value={storageFilter} onChange={e=>setStorageFilter(e.target.value)}><option value="">All locations</option>{data.locations.map(l=><option key={l.id} value={l.name}>{l.name}</option>)}</select></label><label className="check-field"><input type="checkbox" checked={favoriteOnly} onChange={e=>setFavoriteOnly(e.target.checked)}/> Favorites only</label><label className="check-field"><input type="checkbox" checked={buyAgainOnly} onChange={e=>setBuyAgainOnly(e.target.checked)}/> Buy Again: Yes</label><label className="check-field"><input type="checkbox" checked={agingOnly} onChange={e=>setAgingOnly(e.target.checked)}/> Aging only</label><button onClick={()=>{setWineryFilter('');setStyleFilter('');setStorageFilter('');setFavoriteOnly(false);setBuyAgainOnly(false);setAgingOnly(false)}}>Clear filters</button></section>}
       <div className="view-toolbar">
         <div className="segmented" aria-label="Availability"><button className={availability === 'available' ? 'active' : ''} onClick={() => setAvailability('available')}>Available</button><button className={availability === 'consumed' ? 'active' : ''} onClick={() => setAvailability('consumed')}>Consumed</button><button className={availability === 'all' ? 'active' : ''} onClick={() => setAvailability('all')}>All</button></div>
         <div className="mode-switch"><button className={mode === 'cards' ? 'active' : ''} onClick={() => setMode('cards')} aria-label="Card view"><Icon name="cellar" size={18}/></button><button className={mode === 'list' ? 'active' : ''} onClick={() => setMode('list')} aria-label="List view"><Icon name="more" size={18}/></button></div>
       </div>
-      {loading ? <CollectionLoading label="Loading the cellar…" /> : wines.length ? <div className={mode === 'cards' ? 'wine-card-grid cellar-results' : 'wine-list cellar-results'}>{wines.map((wine) => { const photo = heroPhotoFor('wine', wine.id, data); return mode === 'cards' ? <WineCard key={wine.id} wine={wine} hasPhoto={Boolean(photo)} photoUrl={photo ? photoUrls[photo.id] : undefined} onOpen={() => onManage({ kind: 'wine', record: wine })} /> : <WineRow key={wine.id} wine={wine} onClick={() => onManage({ kind: 'wine', record: wine })} /> })}</div> : <div className={`inventory-empty ${mode}`}><div className="bottle-silhouette"><Icon name="bottle" size={46}/></div><h3>{search || filterCount ? 'No matching wines' : 'No wines to show yet'}</h3><p>{search || filterCount ? 'Try a broader search or clear the active filters.' : 'Start the collection with your first wine.'}</p>{editable && !search && !filterCount && <button className="secondary-button" onClick={onAdd}>Add Wine</button>}</div>}
+      {loading ? <CollectionLoading label="Loading the cellar…" /> : wines.length ? <div className={mode === 'cards' ? 'wine-card-grid cellar-results' : 'wine-list cellar-results'}>{wines.map((wine) => { const photo = heroPhotoFor('wine', wine.id, data); return mode === 'cards' ? <WineCard key={wine.id} data={data} wine={wine} hasPhoto={Boolean(photo)} photoUrl={photo ? photoUrls[photo.id] : undefined} onOpen={() => onManage({ kind: 'wine', record: wine })} /> : <WineRow key={wine.id} wine={wine} onClick={() => onManage({ kind: 'wine', record: wine })} /> })}</div> : <div className={`inventory-empty ${mode}`}><div className="bottle-silhouette"><Icon name="bottle" size={46}/></div><h3>{search || filterCount ? 'No matching wines' : 'No wines to show yet'}</h3><p>{search || filterCount ? 'Try a broader search or clear the active filters.' : 'Start the collection with your first wine.'}</p>{editable && !search && !filterCount && <button className="secondary-button" onClick={onAdd}>Add Wine</button>}</div>}
     </div>
   )
 }
@@ -477,11 +479,12 @@ function heroPhotoFor(kind: 'wine' | 'winery', id: string, data: CellarData) {
   return photos.find((photo) => photo.isHero) ?? photos[0]
 }
 
-function WineCard({ wine, hasPhoto, photoUrl, onOpen }: { wine: WineRecord; hasPhoto: boolean; photoUrl?: string; onOpen: () => void }) {
+function WineCard({ wine, data, hasPhoto, photoUrl, onOpen }: { data: CellarData; wine: WineRecord; hasPhoto: boolean; photoUrl?: string; onOpen: () => void }) {
+  const classification=wineClassification(wine,data)
   return (
     <article className="wine-card brass-corners">
-      <button className={`wine-visual ${hasPhoto ? 'has-photo' : ''}`} onClick={onOpen} aria-label={`Open ${wine.name}`}>{photoUrl ? <img src={photoUrl} alt="" /> : hasPhoto ? <span>Loading photo…</span> : <><Icon name="bottle" size={47}/><span>{wine.category || wine.style || 'WINE'}</span></>}</button>
-      <button className="wine-card-copy" onClick={onOpen} aria-label={`Open ${wine.name}`}><p className="eyebrow burgundy">{wine.wineryName || 'INDEPENDENT WINE'}</p><h3>{wine.name}</h3><p className="wine-card-vintage">{wineVintage(wine)}</p><strong>{wine.availableQuantity} available{wine.storageNames.length ? ` · ${wine.storageNames.join(', ')}` : ''}</strong>{wine.averageRating !== null && <StarRatingDisplay value={wine.averageRating} compact />}<WineIndicators wine={wine} /></button>
+      <button className={`wine-visual ${hasPhoto ? 'has-photo' : ''}`} onClick={onOpen} aria-label={`Open ${wine.name}`}>{photoUrl ? <img src={photoUrl} alt="" /> : hasPhoto ? <span>Loading photo…</span> : <><Icon name="bottle" size={47}/><span>{classification.label || 'WINE'}</span></>}</button>
+      <button className="wine-card-copy" onClick={onOpen} aria-label={`Open ${wine.name}`}><p className="eyebrow burgundy">{wine.wineryName || 'INDEPENDENT WINE'}</p><h3>{wine.name}</h3>{classification.labelSourced && <small className="classification-source">{classification.label} · accepted online info</small>}<p className="wine-card-vintage">{wineVintage(wine)}</p><strong>{wine.availableQuantity} available{wine.storageNames.length ? ` · ${wine.storageNames.join(', ')}` : ''}</strong>{wine.averageRating !== null && <StarRatingDisplay value={wine.averageRating} compact />}<WineIndicators wine={wine} /></button>
     </article>
   )
 }

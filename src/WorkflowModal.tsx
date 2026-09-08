@@ -1,3 +1,5 @@
+import { AcquisitionModal } from './AcquisitionModal'
+import { preferredLot, lotDescription } from './lib/bottle-selection'
 import { FormEvent, useRef, useState } from 'react'
 import type { CellarData } from './lib/cellar-data'
 import { supabase } from './lib/supabase'
@@ -5,7 +7,6 @@ import { createPhotoUpload } from './lib/photo-upload'
 import { markFormSaved } from './lib/unsaved-changes'
 import type { QuickAction } from './lib/types'
 import { StateSelect } from './StateSelect'
-import { ClosureSelect } from './ClosureSelect'
 import { userError, validatePhoto } from './lib/user-error'
 import { lotRequiresAgingConfirmation } from './lib/aging-guidance'
 import { finishSuccessfulAction } from './lib/interaction'
@@ -114,70 +115,6 @@ export function WorkflowModal({
         saved.current = true
       }
 
-      if (action === 'add-wine') {
-        const nonVintage = form.get('non_vintage') === 'on'
-        const { error } = await supabase.from('wines').insert({
-          household_id: householdId,
-          winery_id: optional(form, 'winery_id'),
-          name: String(form.get('name')).trim(),
-          vintage: nonVintage ? null : numberOrNull(form, 'vintage'),
-          non_vintage: nonVintage,
-          style: optional(form, 'style'),
-          category: optional(form, 'category'),
-          sweetness: optional(form, 'sweetness'),
-          country: optional(form, 'country'),
-          state: optional(form, 'state'),
-          vineyard: optional(form, 'vineyard'),
-          closure: optional(form, 'closure'),
-          blend_description: optional(form, 'blend_description'),
-          official_winery_notes: optional(form, 'official_winery_notes'),
-          personal_notes: optional(form, 'notes'),
-        })
-        if (error) throw error
-        saved.current = true
-      }
-
-      if (action === 'record-purchase') {
-        const acquisitionType = String(form.get('acquisition_type')) as 'purchased' | 'gift'
-        const quantity = Number(form.get('quantity'))
-        const unitPrice = acquisitionType === 'purchased' ? numberOrNull(form, 'unit_price') : null
-        const lineTotal = unitPrice === null ? null : Number((quantity * unitPrice).toFixed(2))
-        const { data: purchaseId, error } = await supabase.rpc('record_acquisition', {
-          p_household_id: householdId,
-          p_acquisition_type: acquisitionType,
-          p_acquisition_date: optional(form, 'acquisition_date'),
-          p_purchase_location: acquisitionType === 'purchased' ? optional(form, 'purchase_location') : null,
-          p_gift_from: acquisitionType === 'gift' ? optional(form, 'gift_from') : null,
-          p_selected_by_person_id: acquisitionType === 'purchased' ? optional(form, 'selected_by_person_id') : null,
-          p_purchased_by_person_id: acquisitionType === 'purchased' ? optional(form, 'purchased_by_person_id') : null,
-          p_subtotal: lineTotal,
-          p_tax: acquisitionType === 'purchased' ? numberOrNull(form, 'tax') : null,
-          p_discount: acquisitionType === 'purchased' ? numberOrNull(form, 'discount') : null,
-          p_total_cost: acquisitionType === 'purchased' ? numberOrNull(form, 'total_cost') ?? lineTotal : null,
-          p_notes: optional(form, 'notes'),
-          p_items: [{
-            wine_id: String(form.get('wine_id')),
-            quantity,
-            unit_price: unitPrice,
-            total_cost: lineTotal,
-            current_value_per_bottle: acquisitionType === 'purchased' ? numberOrNull(form, 'current_value_per_bottle') ?? unitPrice : null,
-            storage_location_id: String(form.get('storage_location_id')),
-            notes: null,
-          }],
-        })
-        if (error) throw error
-        saved.current = true
-        if (initialVisitId && purchaseId) {
-          const linked = await supabase.from('purchases').update({ winery_visit_id: initialVisitId }).eq('household_id', householdId).eq('id', purchaseId)
-          if (linked.error) nonBlockingWarning = 'The bottles were saved, but could not be linked to this visit. You can link the purchase from Visit Detail.'
-          else if (initialTripId) {
-            const trip = data.trips.find((item) => item.id === initialTripId)
-            const tripLink = trip ? await supabase.from('travel_references').insert({ household_id: householdId, purchase_id: purchaseId, external_system: 'travel-journal', external_entity_type: 'trip', external_id: trip.id, display_label: trip.name, deep_link_path: null }) : null
-            if (tripLink?.error) nonBlockingWarning = 'The purchase is linked to the visit, but its Travel Journal trip link could not be copied.'
-          }
-        }
-      }
-
       if (action === 'open-bottle') {
         const [purchaseItemId, storageLocationId] = String(form.get('bottle_lot')).split('|')
         if (form.get('departure_type') === 'gifted') {
@@ -272,6 +209,8 @@ export function WorkflowModal({
     }
   }
 
+  if (action === 'add-wine' || action === 'record-purchase') return <AcquisitionModal action={action} householdId={householdId} data={data} initialWineryId={initialWineryId} initialVisitId={initialVisitId} initialDate={initialDate} initialTripId={initialTripId} onClose={onClose} onSaved={onSaved} onNotice={onNotice} />
+
   return (
     <ModalLayer layer="action" onDismiss={onClose} dismissible={!busy} surfaceClassName="workflow-modal workflow-form-modal" ariaLabelledBy="workflow-title">
         <div className="sheet-header">
@@ -281,8 +220,6 @@ export function WorkflowModal({
         <form className="workflow-form" onSubmit={submit}>
           <fieldset className="workflow-fields" disabled={busy || saved.current}>
           {action === 'add-winery' && <WineryFields />}
-          {action === 'add-wine' && <WineFields data={data} />}
-          {action === 'record-purchase' && <PurchaseFields data={data} initialWineryId={initialWineryId} initialVisitId={initialVisitId} initialDate={initialDate} initialTripId={initialTripId} />}
           {action === 'open-bottle' && <OpeningFields data={data} initialWineId={initialWineId} />}
           {action === 'add-winery-visit' && <VisitFields data={data} initialWineryId={initialWineryId} />}
           </fieldset>
@@ -305,32 +242,21 @@ function WineryFields() {
   return <><Field label="Winery name" name="name" required /><div className="field-grid"><Field label="City" name="city" /><StateSelect /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><Field label="Region" name="region" /><Field label="Country" name="country" /><Field label="Website" name="website_url" type="url" placeholder="https://" /><Notes /></div></details></>
 }
 
-function WineFields({ data }: { data: CellarData }) {
-  return <><label>Winery<select name="winery_id"><option value="">No winery selected</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Wine name" name="name" required /><div className="field-grid"><Field label="Vintage" name="vintage" type="number" min="1800" /><label className="check-field paired-check-field"><input name="non_vintage" type="checkbox" /> Non-vintage</label><Field label="Category" name="category" placeholder="Red, white, rosé…" /><Field label="Style" name="style" placeholder="Still, sparkling…" /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><div className="field-grid"><Field label="Sweetness" name="sweetness" /><ClosureSelect /><Field label="Country" name="country" /><StateSelect /></div><Field label="Vineyard" name="vineyard" /><Field label="Varietal or blend" name="blend_description" /><Notes label="Official winery notes" name="official_winery_notes"/><Notes label="Our notes" name="notes" /></div></details></>
-}
-
-function PurchaseFields({ data, initialWineryId, initialVisitId, initialDate, initialTripId }: { data: CellarData; initialWineryId: string | null; initialVisitId: string | null; initialDate: string | null; initialTripId: string | null }) {
-  const [acquisitionType, setAcquisitionType] = useState<'purchased' | 'gift'>('purchased')
-  if (!data.wines.length || !data.locations.length) return <Prerequisite message="Add at least one wine and one storage location before recording a purchase." />
-  const rack = data.locations.find((location) => location.name.toLowerCase() === 'rack') ?? data.locations[0]
-  const winery = initialWineryId ? data.wineries.find((item) => item.id === initialWineryId) : null
-  const wineryWines = initialWineryId ? data.wines.filter((wine) => wine.wineryId === initialWineryId) : data.wines
-  const otherWines = initialWineryId ? data.wines.filter((wine) => wine.wineryId !== initialWineryId) : []
-  const wineOption = (wine: CellarData['wines'][number]) => <option key={wine.id} value={wine.id}>{wine.wineryName ? `${wine.wineryName} · ` : ''}{wine.nonVintage ? 'NV' : wine.vintage ?? 'Unknown vintage'} · {wine.name}</option>
-  return <>{initialVisitId && <div className="workflow-context"><strong>Adding to this winery visit</strong><small>{winery?.name ?? 'Winery'} · {initialDate ?? 'Visit date'}{initialTripId ? ' · Linked trip will be preserved' : ''}</small></div>}<ChoiceToggle name="acquisition_type" label="Coming in" value={acquisitionType} options={[['purchased', 'Purchased'], ['gift', 'Gift']]} onChange={(value) => setAcquisitionType(value as 'purchased' | 'gift')} /><label>Wine<select name="wine_id" required defaultValue=""><option value="" disabled>Select a wine</option>{initialWineryId ? <><optgroup label={winery?.name ?? 'This winery'}>{wineryWines.map(wineOption)}</optgroup>{otherWines.length > 0 && <optgroup label="Other wines">{otherWines.map(wineOption)}</optgroup>}</> : data.wines.map(wineOption)}</select></label><div className="field-grid"><Field label={acquisitionType === 'gift' ? 'Date received' : 'Purchase date'} name="acquisition_date" type="date" defaultValue={initialDate ?? localDate()} required={acquisitionType === 'purchased'} /><Field label="Quantity" name="quantity" type="number" min="1" step="1" defaultValue="1" required /></div><label>Put bottles in<select name="storage_location_id" required defaultValue={rack.id}>{data.locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label><fieldset className="workflow-fields" hidden={acquisitionType !== 'gift'} disabled={acquisitionType !== 'gift'}><Field label="Gift from" name="gift_from" /><Notes label="Occasion / Note" /></fieldset><fieldset className="workflow-fields" hidden={acquisitionType !== 'purchased'} disabled={acquisitionType !== 'purchased'}><Field label="Purchased at" name="purchase_location" defaultValue={winery?.name} /><details className="more-details"><summary>More details</summary><div className="details-fields"><div className="field-grid"><Field label="Price per bottle" name="unit_price" type="number" min="0" step="0.01" /><Field label="Current value per bottle" name="current_value_per_bottle" type="number" min="0" step="0.01" /><Field label="Tax" name="tax" type="number" min="0" step="0.01" /><Field label="Discount" name="discount" type="number" min="0" step="0.01" /><Field label="Final total" name="total_cost" type="number" min="0" step="0.01" /></div><PersonSelect name="purchased_by_person_id" label="Purchased by" data={data} /><PersonSelect name="selected_by_person_id" label="Selected by" data={data} /><Notes /></div></details></fieldset></>
-}
-
 function OpeningFields({ data, initialWineId }: { data: CellarData; initialWineId: string | null }) {
   const [departureType, setDepartureType] = useState<'opened' | 'gifted'>('opened')
-  if (!data.bottleLots.length) return <Prerequisite message="There are no available bottles to open." />
-  const selectedLot = data.bottleLots.find((lot) => lot.wineId === initialWineId)
+  const [wineId, setWineId] = useState(initialWineId ?? '')
+  const [changingWine, setChangingWine] = useState(!initialWineId)
+  const [search, setSearch] = useState('')
+  const selectedLot = preferredLot(data.bottleLots, initialWineId)
   const defaultLot = selectedLot ? `${selectedLot.purchaseItemId}|${selectedLot.storageLocationId}` : ''
   const [lotValue, setLotValue] = useState(defaultLot)
+  const relevantLots = wineId ? data.bottleLots.filter((lot) => lot.wineId === wineId) : []
+  const availableWines = data.wines.filter((wine) => data.bottleLots.some((lot) => lot.wineId === wine.id) && `${wine.name} ${wine.wineryName ?? ''} ${wine.vintage ?? ''}`.toLowerCase().includes(search.toLowerCase()))
   const activeLot = data.bottleLots.find((lot) => `${lot.purchaseItemId}|${lot.storageLocationId}` === lotValue)
   const needsAgingConfirmation = lotRequiresAgingConfirmation(activeLot)
   const kayla = data.people.find((person) => person.displayName.toLowerCase() === 'kayla')
   const scott = data.people.find((person) => person.displayName.toLowerCase() === 'scott')
-  return <><ChoiceToggle name="departure_type" label="Going out" value={departureType} options={[['opened', 'Opened'], ['gifted', 'Gifted']]} onChange={(value) => setDepartureType(value as 'opened' | 'gifted')} /><label>Bottle and location<select name="bottle_lot" required value={lotValue} onChange={(event) => setLotValue(event.target.value)}><option value="" disabled>Select an available bottle</option>{data.bottleLots.map((lot) => <option key={`${lot.purchaseItemId}-${lot.storageLocationId}`} value={`${lot.purchaseItemId}|${lot.storageLocationId}`}>{lot.wineLabel} · {lot.storageLocationName} ({lot.quantity}{lot.agingQuantity ? ` · ${lot.agingQuantity} Aging` : ''})</option>)}</select></label>{needsAgingConfirmation && <label className="aging-departure-warning"><input type="checkbox" name="confirm_aging" required /> <span><strong>This is an Aging bottle.</strong> Confirm that you want to remove it before its hold date{activeLot?.earliestHoldUntilYear ? ` (${activeLot.earliestHoldUntilYear})` : ''}.</span></label>}<fieldset className="workflow-fields" hidden={departureType !== 'gifted'} disabled={departureType !== 'gifted'}><div className="field-grid departure-primary-fields"><Field label="Gifted to" name="gifted_to" required /><Field label="Date" name="gifted_on" type="date" defaultValue={localDate()} required /></div><Notes label="Occasion / Note" name="occasion_note" /></fieldset><fieldset className="workflow-fields" hidden={departureType !== 'opened'} disabled={departureType !== 'opened'}><div className="field-grid departure-primary-fields"><Field label="Opening date" name="opened_at" type="date" defaultValue={localDate()} required /><label>Opened by<select name="opened_by_choice"><option value="">Not specified</option>{kayla&&<option value={kayla.id}>Kayla</option>}{scott&&<option value={scott.id}>Scott</option>}<option value="both">Both</option></select></label></div><label>Status<select name="status" defaultValue="finished"><option value="finished">Finished</option><option value="open">Still open</option></select></label><Notes label="Memory notes" name="memory_notes" /><h3 className="form-section-title">What did everyone think?</h3>{data.people.map(person=><fieldset className="preference-card" key={person.id}><legend>{person.displayName}</legend><StarRatingInput name={`rating_${person.id}`} /><label>Buy again<select name={`buy_again_${person.id}`}><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label>Personal tasting notes<textarea name={`tasting_notes_${person.id}`} rows={2}/></label></fieldset>)}<PhotoPicker label="Opening photo" /><details className="more-details"><summary>More details</summary><div className="details-fields"><Field label="Enjoyed with" name="enjoyed_with" /><Field label="Occasion" name="occasion" /><Field label="Photo caption" name="photo_caption"/><label>Issue<select name="issue_type"><option value="">No issue</option><option value="cork_failed">Cork failed</option><option value="corked">Corked</option><option value="oxidized">Oxidized</option><option value="other">Other</option></select></label><Notes label="Issue notes" name="issue_notes" /></div></details></fieldset></>
+  return <><ChoiceToggle name="departure_type" label="Going out" value={departureType} options={[['opened', 'Opened'], ['gifted', 'Gifted']]} onChange={(value) => setDepartureType(value as 'opened' | 'gifted')} />{changingWine ? <div className="bottle-wine-picker"><label>Search wines<input name="wine_search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>Wine<select name="selected_wine" value={wineId} required onChange={(event) => { const id=event.target.value; setWineId(id); const lot=preferredLot(data.bottleLots,id); setLotValue(lot ? `${lot.purchaseItemId}|${lot.storageLocationId}` : ''); setChangingWine(false) }}><option value="">Choose a wine</option>{availableWines.map((wine) => <option key={wine.id} value={wine.id}>{wine.wineryName} · {wine.name} · {wine.nonVintage ? 'NV' : wine.vintage ?? 'Vintage unknown'}</option>)}</select></label></div> : <div className="workflow-context"><strong>{data.wines.find((wine) => wine.id === wineId)?.name}</strong><button type="button" className="text-button" onClick={() => setChangingWine(true)}>Change Wine</button></div>}<label>Bottle and location<select name="bottle_lot" required value={lotValue} onChange={(event) => setLotValue(event.target.value)}><option value="" disabled>Select an available bottle</option>{relevantLots.map((lot) => <option key={`${lot.purchaseItemId}-${lot.storageLocationId}`} value={`${lot.purchaseItemId}|${lot.storageLocationId}`}>{lotDescription(lot,data)}</option>)}</select></label>{needsAgingConfirmation && <label className="aging-departure-warning"><input type="checkbox" name="confirm_aging" required /> <span><strong>This is an Aging bottle.</strong> Confirm that you want to remove it before its hold date{activeLot?.earliestHoldUntilYear ? ` (${activeLot.earliestHoldUntilYear})` : ''}.</span></label>}<fieldset className="workflow-fields" hidden={departureType !== 'gifted'} disabled={departureType !== 'gifted'}><div className="field-grid departure-primary-fields"><Field label="Gifted to" name="gifted_to" required /><Field label="Date" name="gifted_on" type="date" defaultValue={localDate()} required /></div><Notes label="Occasion / Note" name="occasion_note" /></fieldset><fieldset className="workflow-fields" hidden={departureType !== 'opened'} disabled={departureType !== 'opened'}><div className="field-grid departure-primary-fields"><Field label="Opening date" name="opened_at" type="date" defaultValue={localDate()} required /><label>Opened by<select name="opened_by_choice"><option value="">Not specified</option>{kayla&&<option value={kayla.id}>Kayla</option>}{scott&&<option value={scott.id}>Scott</option>}<option value="both">Both</option></select></label></div><details className="more-details"><summary>Tasting notes — now or later</summary><div className="details-fields"><label>Status<select name="status" defaultValue="open"><option value="open">Still open</option><option value="finished">Finished</option></select></label><Notes label="Memory notes" name="memory_notes" /><h3 className="form-section-title">What did everyone think?</h3>{data.people.map(person=><fieldset className="preference-card" key={person.id}><legend>{person.displayName}</legend><StarRatingInput name={`rating_${person.id}`} /><label>Buy again<select name={`buy_again_${person.id}`}><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label>Personal tasting notes<textarea name={`tasting_notes_${person.id}`} rows={2}/></label></fieldset>)}</div></details><PhotoPicker label="Opening photo" /><details className="more-details"><summary>More details</summary><div className="details-fields"><Field label="Enjoyed with" name="enjoyed_with" /><Field label="Occasion" name="occasion" /><Field label="Photo caption" name="photo_caption"/><label>Issue<select name="issue_type"><option value="">No issue</option><option value="cork_failed">Cork failed</option><option value="corked">Corked</option><option value="oxidized">Oxidized</option><option value="other">Other</option></select></label><Notes label="Issue notes" name="issue_notes" /></div></details></fieldset></>
 }
 
 function ChoiceToggle({ name, label, value, options, onChange }: { name:string; label:string; value:string; options:Array<[string,string]>; onChange:(value:string)=>void }) {
@@ -342,9 +268,6 @@ function VisitFields({ data, initialWineryId }: { data: CellarData; initialWiner
   return <><label>Winery<select name="winery_id" required defaultValue={initialWineryId ?? ''}><option value="" disabled>Select a winery</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Visit date" name="visit_date" type="date" defaultValue={localDate()} required /><label>Travel Journal trip<select name="trip_id" defaultValue=""><option value="">No linked trip</option>{data.trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.name} · {trip.startDate}</option>)}</select></label><Notes label="Visit memories" /><PhotoPicker label="Visit photo" hint="Take Photo or Choose from Photos · optional" /><div className="field-grid"><Field label="Photo caption" name="photo_caption" /><Field label="Photo date" name="photographed_at" type="date" /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><label>Would visit again<select name="would_visit_again"><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="check-field"><input name="favorite" type="checkbox" /> Favorite visit</label></div></details></>
 }
 
-function PersonSelect({ name, label, data }: { name: string; label: string; data: CellarData }) {
-  return <label>{label}<select name={name}><option value="">Not specified</option>{data.people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>
-}
 
 function Prerequisite({ message }: { message: string }) {
   return <div className="prerequisite"><strong>One thing first</strong><p>{message}</p></div>

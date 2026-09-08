@@ -9,7 +9,7 @@ import { installUnsavedNavigationGuard } from './lib/unsaved-changes'
 
 const api = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), upload: vi.fn(), insert: vi.fn(), upsert: vi.fn() }))
 vi.mock('./lib/supabase', () => ({ supabase: { rpc: api.rpc, from: api.from, storage: { from: () => ({ upload: api.upload }) } } }))
-const fixture = { ...EMPTY_CELLAR_DATA, wineries: [{ id: 'winery', name: 'Test Winery' }], wines: [{ id: 'wine', name: 'Test Wine', wineryId: 'winery' }], locations: [{ id: 'rack', name: 'Rack' }], bottleLots: [{ wineId: 'wine', purchaseItemId: 'lot', storageLocationId: 'rack', storageLocationName: 'Rack', wineLabel: 'Test Wine', quantity: 5, agingQuantity: 0 }] } as CellarData
+const fixture = { ...EMPTY_CELLAR_DATA, wineries: [{ id: 'winery', name: 'Test Winery' }], wines: [{ id: 'wine', name: 'Test Wine', wineryId: 'winery' }], locations: [{ id: 'rack', name: 'Rack', isActive: true }], bottleLots: [{ wineId: 'wine', purchaseItemId: 'lot', storageLocationId: 'rack', storageLocationName: 'Rack', wineLabel: 'Test Wine', quantity: 5, agingQuantity: 0 }] } as CellarData
 let saved = vi.fn<() => Promise<void>>(), close = vi.fn<() => void>(), notice = vi.fn<(message: string, tone?: 'success' | 'warning') => void>()
 function mount(action: 'open-bottle' | 'add-winery-visit' | 'record-purchase' = 'open-bottle') {
   return render(createElement(WorkflowModal, { action, householdId: 'household', data: fixture, initialWineId: 'wine', initialWineryId: 'winery', onSaved: saved, onClose: close, onNotice: notice }))
@@ -103,9 +103,9 @@ it('separates opening/gifting dates and recipients and preserves both drafts', a
 it('keeps Purchased at out of Gift from, retaining independent acquisition drafts', () => {
   mount('record-purchase')
   fireEvent.change(screen.getByLabelText('Purchased at'), { target: { value: 'Shop' } })
-  fireEvent.click(screen.getByLabelText('Gift', { exact: true }))
+  fireEvent.change(screen.getByLabelText('Acquisition'), { target: { value: 'gift' } })
   expect((screen.getByLabelText('Gift from') as HTMLInputElement).value).toBe('')
-  fireEvent.click(screen.getByLabelText('Purchased', { exact: true }))
+  fireEvent.change(screen.getByLabelText('Acquisition'), { target: { value: 'purchased' } })
   expect((screen.getByLabelText('Purchased at') as HTMLInputElement).value).toBe('Shop')
 })
 

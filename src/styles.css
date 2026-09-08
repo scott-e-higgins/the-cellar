@@ -667,3 +667,13 @@ button:not(:disabled):active { transform: translateY(1px); }
 .data-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .data-error button, .toast-actions button { min-height: 44px; padding: 8px 12px; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 .toast-actions { display: flex; gap: 12px; margin-top: 10px; }
+
+.acquisition-body, .new-wine-fields, .acquisition-lines, .acquisition-line { display: grid; gap: 14px; min-width: 0; }
+.acquisition-body[hidden], .acquisition-form [hidden] { display: none; }
+.acquisition-line { padding: 16px; border: 1px solid var(--line, #d8cbb7); border-radius: 12px; }
+.acquisition-line h3 { margin: 0; overflow-wrap: anywhere; }
+.acquisition-line .field-grid { min-width: 0; }
+.acquisition-form select, .acquisition-form input, .bottle-wine-picker select { min-width: 0; max-width: 100%; }
+.bottle-wine-picker { display: grid; gap: 12px; }
+.classification-source { display: block; color: var(--muted, #766b60); font-size: 12px; font-weight: normal; }
+@media (max-width: 420px) { .acquisition-line { padding: 12px; } .acquisition-line .field-grid { grid-template-columns: 1fr; } }
