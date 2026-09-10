@@ -36,6 +36,9 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[uncertain,setUncertain]=useState(false)
  const selectedWinery=data.wineries.find(w=>w.id===winery)
  const wineryName=selectedWinery?.name??newWinery?.name??winerySearch
+ const wineryQuery=winerySearch.trim().toLowerCase()
+ const matchingWineries=wineryQuery?data.wineries.filter(w=>w.name.toLowerCase().includes(wineryQuery)).sort((a,b)=>Number(b.name.toLowerCase().startsWith(wineryQuery))-Number(a.name.toLowerCase().startsWith(wineryQuery))||a.name.localeCompare(b.name)).slice(0,3):[]
+ const showWineryResults=choosingWinery&&Boolean(wineryQuery)
  const rack=initialLocationId??data.locations.find(l=>l.isActive&&l.name.toLowerCase()==='rack')?.id??data.locations.find(l=>l.isActive)?.id??''
  const makeLine=():Line=>({id:createUniqueId(),wineId:'',draft:blankWine(winery),quantity:'1',location:rack,price:'',currentValue:''})
  const [lines,setLines]=useState<Line[]>(()=>[makeLine()])
@@ -79,13 +82,13 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
   }catch(error){setMessage(userError(error,'The save could not be confirmed. Retry Save safely retries the same acquisition.'))}finally{flight.current=false;setBusy(false)}
  }
  return <ModalLayer layer="action" dismissible={!busy} onDismiss={onClose} surfaceClassName="workflow-modal workflow-form-modal wine-entry-modal" ariaLabelledBy="entry-title">
-  <div className="sheet-header detail-header"><div><p className="eyebrow burgundy">OUR CELLAR</p><h2 id="entry-title">{initialPurchaseId?'Add Another Wine':action==='record-purchase'?'Add Wines & Bottles':'Add Wine'}</h2></div><button className="icon-close" aria-label="Close" disabled={busy} onClick={onClose}>×</button></div>
+  <div className="sheet-header entry-header"><div><p className="eyebrow burgundy">OUR CELLAR</p><h2 id="entry-title">{initialPurchaseId?'Add Another Wine':action==='record-purchase'?'Add Wines & Bottles':'Add Wine'}</h2></div><button className="icon-close" aria-label="Close" disabled={busy} onClick={onClose}>×</button></div>
   <form className="workflow-form wine-entry-form" aria-busy={busy} onSubmit={submit}>
    <fieldset className="workflow-fields" disabled={busy||uncertain||saved.current}>
     {auditMode&&<p className="entry-context">Add the wine’s identity here. Return to the audit to count its bottles; inventory changes only when you Apply Audit.</p>}
     <section className="entry-section">
-     <label>Winery<input name="winery_search" type="search" autoComplete="off" value={winerySearch} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
-     {choosingWinery&&<div className="entry-suggestions" role="group" aria-label="Matching wineries">{data.wineries.filter(w=>w.name.toLowerCase().includes(winerySearch.trim().toLowerCase())).slice(0,8).map(w=><button key={w.id} type="button" onClick={()=>selectWinery(w.id,w.name)}>{w.name}{w.city?` · ${w.city}`:''}</button>)}{winerySearch.trim()&&!data.wineries.some(w=>w.name.toLowerCase()===winerySearch.trim().toLowerCase())&&<button type="button" onClick={()=>selectWinery('',winerySearch.trim(),true)}>+ Add “{winerySearch.trim()}”</button>}</div>}
+     <label>Winery<input name="winery_search" type="search" aria-expanded={showWineryResults} aria-controls={showWineryResults?'entry-winery-results':undefined} onKeyDown={e=>{if(showWineryResults&&e.key==='Enter')e.preventDefault();if(showWineryResults&&e.key==='Escape'){e.stopPropagation();setChoosingWinery(false)}}} autoComplete="off" value={winerySearch} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
+     {showWineryResults&&<div id="entry-winery-results" className="entry-suggestions winery-suggestions" role="group" aria-label="Matching wineries">{matchingWineries.map(w=><button key={w.id} type="button" onClick={()=>selectWinery(w.id,w.name)}>{w.name}{w.city?` · ${w.city}`:''}</button>)}{winerySearch.trim()&&!data.wineries.some(w=>w.name.toLowerCase()===winerySearch.trim().toLowerCase())&&<button type="button" onClick={()=>selectWinery('',winerySearch.trim(),true)}>+ Add “{winerySearch.trim()}”</button>}</div>}
      {newWinery&&<><p className="entry-context">✓ {newWinery.name} will be added with this wine.</p><label>Winery location (optional)<input name="winery_city" placeholder="City or region" value={newWinery.city} onChange={e=>setNewWinery({...newWinery,city:e.target.value})}/></label></>}
     </section>
     {lines.map((item,index)=>{const draft=item.draft!,existing=data.wines.filter(w=>w.wineryId===winery&&draft.name.trim()&&w.name.toLowerCase().includes(draft.name.trim().toLowerCase())).slice(0,5);return <section className="entry-section" key={item.id}>
