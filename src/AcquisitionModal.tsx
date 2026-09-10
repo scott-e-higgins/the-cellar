@@ -12,10 +12,10 @@ import {inferEntryContext,type EntryContext} from './lib/entry-context'
 import type {EntryCompletion,EntryResult} from './lib/entry-types'
 import {acquisitionItems,blankWine,numeric,type AcquisitionLine} from './lib/acquisition-items'
 import {displayDate} from './lib/presentation'
+import {WineInfoLookup,type WineInfoMatch,type WineInfoCache} from './WineInfoLookup'
 export {acquisitionItems} from './lib/acquisition-items'
 export type {WineDraft,AcquisitionLine} from './lib/acquisition-items'
-type Match={sources?:{source_name:string;source_url:string}[];id:string;status:string;confidence:string;match_type:string;match_explanation:string;proposed_data:Record<string,unknown>}
-type Line=AcquisitionLine&{match?:Match;accepted?:boolean;looking?:boolean;lookupError?:string}
+type Line=AcquisitionLine&{match?:WineInfoMatch;accepted?:boolean}
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
 export function AcquisitionModal({auditMode=false,action,householdId,data,initialWineryId,initialVisitId,initialDate,initialTripId,initialPurchaseId,initialLocationId,onClose,onSaved,onNotice,onComplete}: {
  auditMode?:boolean;action:'add-wine'|'record-purchase';householdId:string;data:CellarData;initialWineryId?:string|null;initialVisitId?:string|null;initialDate?:string|null;initialTripId?:string|null;initialPurchaseId?:string|null;initialLocationId?:string|null;
@@ -43,20 +43,10 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
  const attachment=useRef<File|null>(null)
  const requestId=useRef(createUniqueId()),payload=useRef<Record<string,unknown>|null>(null),flight=useRef(false),saved=useRef(false)
  const context=inferEntryContext(data,winery,date,visitChoice,tripChoice)
- const looking=lines.some(l=>l.looking)
+ const lookupCache=useRef<WineInfoCache>(new Map())
  const selectWinery=(id:string,name:string,pending=false)=>{setWinery(id);setWinerySearch(name);setNewWinery(pending?{name,city:''}:null);setChoosingWinery(false);setVisitChoice(undefined);setTripChoice(undefined);setCreateVisit(false);setLines(items=>items.map(l=>({...l,wineId:'',draft:{...l.draft!,winery_id:id},match:undefined,accepted:false}))) }
- const findInfo=async(item:Line)=>{
-  if(!supabase||!item.draft?.name.trim()||!wineryName.trim()||item.looking)return
-  update(item.id,{looking:true,lookupError:'',match:undefined,accepted:false})
-  try{
-   const response=await supabase.functions.invoke('enrich-record',{body:{action:'preview_wine',householdId,draft:{name:item.draft.name.trim(),winery_name:wineryName.trim(),vintage:item.draft.non_vintage==='true'?null:numeric(item.draft.vintage),non_vintage:item.draft.non_vintage==='true'}}})
-   if(response.error)throw response.error
-   if(!response.data?.attempt)throw new Error(response.data?.error??'No wine information returned.')
-   update(item.id,{match:{...response.data.attempt,sources:response.data.sources}})
-  }catch(error){update(item.id,{lookupError:userError(error,'Wine information could not be found. You can still save this wine.')})}finally{update(item.id,{looking:false})}
- }
  const submit=async(event:FormEvent<HTMLFormElement>)=>{
-  event.preventDefault();if(!supabase||flight.current||saved.current||looking)return
+  event.preventDefault();if(!supabase||flight.current||saved.current)return
   const form=event.currentTarget,fd=new FormData(form)
   flight.current=true;setBusy(true);setMessage('')
   let photo=(form.elements.namedItem('photo') as HTMLInputElement|null)?.files?.[0]??null
@@ -88,25 +78,23 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
    onNotice(refreshFailed?`Saved, but the screen could not refresh.${retryPhoto?' Record saved; photo not added.':''}`:retryPhoto?'Record saved; photo not added.':definitionOnly?'Wine saved without bottles.':'Wine and bottles added to our Cellar.',refreshFailed||retryPhoto?'warning':'success')
   }catch(error){setMessage(userError(error,'The save could not be confirmed. Retry Save safely retries the same acquisition.'))}finally{flight.current=false;setBusy(false)}
  }
- return <ModalLayer layer="action" dismissible={!busy&&!looking} onDismiss={onClose} surfaceClassName="workflow-modal workflow-form-modal wine-entry-modal" ariaLabelledBy="entry-title">
-  <div className="sheet-header detail-header"><div><p className="eyebrow burgundy">OUR CELLAR</p><h2 id="entry-title">{initialPurchaseId?'Add Another Wine':action==='record-purchase'?'Add Wines & Bottles':'Add Wine'}</h2></div><button className="icon-close" aria-label="Close" disabled={busy||looking} onClick={onClose}>×</button></div>
-  <form className="workflow-form wine-entry-form" aria-busy={busy||looking} onSubmit={submit}>
-   <fieldset className="workflow-fields" disabled={busy||uncertain||saved.current||looking}>
+ return <ModalLayer layer="action" dismissible={!busy} onDismiss={onClose} surfaceClassName="workflow-modal workflow-form-modal wine-entry-modal" ariaLabelledBy="entry-title">
+  <div className="sheet-header detail-header"><div><p className="eyebrow burgundy">OUR CELLAR</p><h2 id="entry-title">{initialPurchaseId?'Add Another Wine':action==='record-purchase'?'Add Wines & Bottles':'Add Wine'}</h2></div><button className="icon-close" aria-label="Close" disabled={busy} onClick={onClose}>×</button></div>
+  <form className="workflow-form wine-entry-form" aria-busy={busy} onSubmit={submit}>
+   <fieldset className="workflow-fields" disabled={busy||uncertain||saved.current}>
     {auditMode&&<p className="entry-context">Add the wine’s identity here. Return to the audit to count its bottles; inventory changes only when you Apply Audit.</p>}
     <section className="entry-section">
-     <label>Winery<input name="winery_search" type="search" autoComplete="off" value={winerySearch} disabled={looking} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
+     <label>Winery<input name="winery_search" type="search" autoComplete="off" value={winerySearch} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
      {choosingWinery&&<div className="entry-suggestions" role="group" aria-label="Matching wineries">{data.wineries.filter(w=>w.name.toLowerCase().includes(winerySearch.trim().toLowerCase())).slice(0,8).map(w=><button key={w.id} type="button" onClick={()=>selectWinery(w.id,w.name)}>{w.name}{w.city?` · ${w.city}`:''}</button>)}{winerySearch.trim()&&!data.wineries.some(w=>w.name.toLowerCase()===winerySearch.trim().toLowerCase())&&<button type="button" onClick={()=>selectWinery('',winerySearch.trim(),true)}>+ Add “{winerySearch.trim()}”</button>}</div>}
      {newWinery&&<><p className="entry-context">✓ {newWinery.name} will be added with this wine.</p><label>Winery location (optional)<input name="winery_city" placeholder="City or region" value={newWinery.city} onChange={e=>setNewWinery({...newWinery,city:e.target.value})}/></label></>}
     </section>
     {lines.map((item,index)=>{const draft=item.draft!,existing=data.wines.filter(w=>w.wineryId===winery&&draft.name.trim()&&w.name.toLowerCase().includes(draft.name.trim().toLowerCase())).slice(0,5);return <section className="entry-section" key={item.id}>
      {lines.length>1&&<div className="sheet-header"><h3>Wine {index+1}</h3><button type="button" className="text-button" onClick={()=>{if(!draft.name.trim()||window.confirm("Remove this wine from the entry?"))setLines(ls=>ls.filter(l=>l.id!==item.id))}}>Remove wine</button></div>}
-     <label>Wine name<input name={`wine_${item.id}`} autoComplete="off" required value={draft.name} disabled={looking} onChange={e=>update(item.id,{wineId:'',draft:{...draft,name:e.target.value},match:undefined,accepted:false})}/></label>
+     <label>Wine name<input name={`wine_${item.id}`} autoComplete="off" required value={draft.name} onChange={e=>update(item.id,{wineId:'',draft:{...draft,name:e.target.value},match:undefined,accepted:false})}/></label>
      {!item.wineId&&existing.length>0&&<div className="entry-suggestions" role="group" aria-label="Existing wines">{existing.map(w=><button type="button" key={w.id} onClick={()=>update(item.id,{wineId:w.id,draft:{...blankWine(winery),name:w.name,vintage:w.vintage?.toString()??'',non_vintage:String(w.nonVintage)},match:undefined,accepted:false})}>Use {w.name} · {w.nonVintage?'NV':w.vintage??'Vintage unknown'}</button>)}</div>}
-     <div className="field-grid"><label>Vintage<input name={`vintage_${item.id}`} type="number" inputMode="numeric" min="1800" max="2200" disabled={looking||draft.non_vintage==='true'} value={draft.vintage} onChange={e=>update(item.id,{wineId:'',draft:{...draft,vintage:e.target.value},match:undefined,accepted:false})}/></label><label className="check-field"><input name={`nv_${item.id}`} type="checkbox" disabled={looking} checked={draft.non_vintage==='true'} onChange={e=>update(item.id,{wineId:'',draft:{...draft,non_vintage:String(e.target.checked)},match:undefined,accepted:false})}/> Non-vintage</label></div>
+     <div className="field-grid"><label>Vintage<input name={`vintage_${item.id}`} type="number" inputMode="numeric" min="1800" max="2200" disabled={draft.non_vintage==='true'} value={draft.vintage} onChange={e=>update(item.id,{wineId:'',draft:{...draft,vintage:e.target.value},match:undefined,accepted:false})}/></label><label className="check-field"><input name={`nv_${item.id}`} type="checkbox" checked={draft.non_vintage==='true'} onChange={e=>update(item.id,{wineId:'',draft:{...draft,non_vintage:String(e.target.checked)},match:undefined,accepted:false})}/> Non-vintage</label></div>
      {item.wineId&&<p className="entry-context">✓ Adding bottles to this existing wine.</p>}
-     <button type="button" className="secondary-button full-button" disabled={looking||!draft.name.trim()||(!winery&&!newWinery)} onClick={()=>void findInfo(item)}>{item.looking?'Finding wine information…':'Find Wine Info'}</button>
-     {item.lookupError&&<p role="alert">{item.lookupError}</p>}
-     {item.match&&<div className="entry-match"><strong>{item.match.status==='no_match'?'No reliable match found':item.accepted?'✓ Information selected':`${item.match.match_type==='exact'?'Exact match':'Review this match'} · ${item.match.confidence} confidence`}</strong><p>{item.match.match_explanation}</p>{item.match.status!=='no_match'&&<><dl>{['official_name','producer','vintage','category','style','grapes','region'].filter(k=>item.match!.proposed_data[k]!=null).map(k=><div key={k}><dt>{k.replaceAll('_',' ')}</dt><dd>{String(item.match!.proposed_data[k])}</dd></div>)}</dl><details><summary>More sourced information</summary>{Object.entries(item.match.proposed_data).map(([k,v])=><p key={k}><strong>{k.replaceAll('_',' ')}:</strong> {Array.isArray(v)?v.join(', '):String(v)}</p>)}</details>{item.match.sources?.map(source=><a key={source.source_url} href={source.source_url} target="_blank" rel="noreferrer">{source.source_name} ↗</a>)}{!item.accepted&&<button type="button" className="primary-button" onClick={()=>update(item.id,{accepted:true})}>Use This Info</button>}<small>Saved as sourced information. Our personal fields stay separate.</small></>}</div>}
+     {(()=>{const identity=JSON.stringify([householdId,winery||newWinery?.name||'',wineryName.trim(),draft.name.trim(),draft.non_vintage==='true'?'NV':draft.vintage]);return <WineInfoLookup key={identity} cacheKey={identity} cache={lookupCache.current} householdId={householdId} wineryName={winery||newWinery?wineryName:''} name={draft.name} vintage={draft.vintage} nonVintage={draft.non_vintage==='true'} disabled={busy||uncertain||saved.current} accepted={Boolean(item.accepted)} onUse={match=>update(item.id,{match,accepted:true})}/>})()}
      {!definitionOnly&&<div className="field-grid"><label>Quantity<input name={`quantity_${item.id}`} type="number" inputMode="numeric" min="1" step="1" required value={item.quantity} onChange={e=>update(item.id,{quantity:e.target.value})}/></label><label>Price per bottle (optional)<input name={`price_${item.id}`} type="number" inputMode="decimal" min="0" step="0.01" disabled={kind==='gift'} value={item.price} onChange={e=>update(item.id,{price:e.target.value})}/></label></div>}
      {!item.wineId&&<details><summary>Our notes</summary><label>Our notes<textarea name={`personal_${item.id}`} value={draft.personal_notes??''} onChange={e=>update(item.id,{draft:{...draft,personal_notes:e.target.value}})}/></label></details>}
     </section>})}
@@ -118,13 +106,13 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
      {!context.visitId&&!context.ambiguousVisit&&(winery||newWinery)&&date&&<label className="check-field"><input type="checkbox" name="create_visit" checked={createVisit} onChange={e=>setCreateVisit(e.target.checked)}/> Create Visit for this date</label>}
      </>}
      {lines.map((item,index)=><label key={item.id}>{lines.length>1?`Storage for wine ${index+1}`:'Storage'}<select name={`location_${item.id}`} required value={item.location} onChange={e=>update(item.id,{location:e.target.value})}><option value="">Choose storage</option>{data.locations.filter(l=>l.isActive).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>)}
-     <button type="button" className="secondary-button" disabled={looking} onClick={()=>setLines(ls=>[...ls,{...makeLine(),location:ls[0]?.location??rack}])}>Add another wine before saving</button>
+     <button type="button" className="secondary-button" onClick={()=>setLines(ls=>[...ls,{...makeLine(),location:ls[0]?.location??rack}])}>Add another wine before saving</button>
      <details><summary>More acquisition details / photo</summary>{!initialPurchaseId&&<><fieldset className="workflow-fields" hidden={kind==='gift'} disabled={kind==='gift'}><label>Purchased at<input name="purchase_location" value={purchasePlace??wineryName} onChange={e=>setPurchasePlace(e.target.value)}/></label></fieldset><fieldset className="workflow-fields" hidden={kind!=='gift'} disabled={kind!=='gift'}><label>Gift from<input name="gift_from"/></label></fieldset><div className="field-grid">{[['tax','Tax'],['discount','Discount'],['total_cost','Final total']].map(([key,label])=><label key={key}>{label}<input name={key} type="number" inputMode="decimal" min="0" step="0.01"/></label>)}</div>{[['purchased_by_person_id','Purchased by'],['selected_by_person_id','Selected by']].map(([key,label])=><label key={key}>{label}<select name={key}><option value="">Not specified</option>{data.people.map(p=><option key={p.id} value={p.id}>{p.displayName}</option>)}</select></label>)}<label>Purchase notes<textarea name="notes"/></label></>}<PhotoPicker name="photo" label="Photo of the first wine (optional)"/></details>
     </section>}
     {!auditMode&&!initialPurchaseId&&lines.length===1&&<details><summary>Wine without bottles</summary><label className="check-field"><input name="definition_only" type="checkbox" checked={definitionOnly} onChange={e=>setDefinitionOnly(e.target.checked)}/> Save wine without adding bottles</label></details>}
    </fieldset>
    {message&&<p role="alert" className="form-message error">{message}</p>}{uncertain&&<p>The connection was interrupted. Retry Save checks the same acquisition without adding bottles twice.</p>}
-   <div className="form-actions entry-save"><button type="button" data-discard className="secondary-button" disabled={busy||looking} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||looking||saved.current}>{busy?'Saving…':uncertain?'Retry Save':'Save'}</button></div>
+   <div className="form-actions entry-save"><button type="button" data-discard className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||saved.current}>{busy?'Saving…':uncertain?'Retry Save':'Save'}</button></div>
   </form>
  </ModalLayer>
 }
