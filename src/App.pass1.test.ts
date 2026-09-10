@@ -6,9 +6,9 @@ import { CellarShell } from './App'
 import { EMPTY_CELLAR_DATA, type CellarData } from './lib/cellar-data'
 import { installUnsavedNavigationGuard, pushCellarHistory } from './lib/unsaved-changes'
 
-const api = vi.hoisted(() => ({ load: vi.fn(), update: vi.fn(), insert: vi.fn() }))
+const api = vi.hoisted(() => ({ load: vi.fn(), update: vi.fn(), insert: vi.fn(), rpc: vi.fn() }))
 vi.mock('./lib/cellar-data', async (original) => ({ ...await original<typeof import('./lib/cellar-data')>(), loadCellarData: api.load }))
-vi.mock('./lib/supabase', () => ({ supabase: { from: () => ({ update: api.update, insert: api.insert }) }, isSupabaseConfigured: true }))
+vi.mock('./lib/supabase', () => ({ supabase: { rpc: api.rpc, from: () => ({ update: api.update, insert: api.insert }) }, isSupabaseConfigured: true }))
 const winery = { id: 'winery', name: 'Test Winery', country: 'US', wineCount: 0, visitCount: 0, favorite: false }
 const data = { ...EMPTY_CELLAR_DATA, wineries: [winery] } as CellarData
 beforeEach(() => {
@@ -17,6 +17,7 @@ beforeEach(() => {
   pushCellarHistory({ cellarOverlay: null }, '#/wineries')
   vi.spyOn(window, 'confirm').mockReturnValue(false)
   HTMLElement.prototype.scrollTo = vi.fn(function(this: HTMLElement, options?: ScrollToOptions | number, y?: number) { this.scrollTop = typeof options === 'number' ? y ?? 0 : options?.top ?? 0 })
+  api.rpc.mockResolvedValue({data:"visit",error:null})
   api.load.mockResolvedValue(data)
   api.insert.mockReturnValue({ select: () => ({ single: async () => ({ data: { id: 'visit' }, error: null }) }) })
   api.update.mockImplementation(() => ({ eq: () => ({ eq: async () => ({ error: null }) }) }))
@@ -113,7 +114,7 @@ it('contextual Add Visit cancellation restores winery scroll and search', async 
   await act(async () => { await new Promise(requestAnimationFrame) })
   fireEvent.scroll(detail, { target: { scrollTop: 750 } })
   fireEvent.click(screen.getByRole('button', { name: 'Add Visit' }))
-  expect((screen.getByLabelText('Winery') as HTMLSelectElement).value).toBe('winery')
+  expect((screen.getByLabelText('Winery') as HTMLInputElement).value).toBe('Test Winery')
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'Add Winery Visit' })).toBeNull())
   expect(detail.scrollTop).toBe(750)
@@ -161,6 +162,6 @@ it('successful Add Visit returns exactly one level without a discard warning', a
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'Add Winery Visit' })).toBeNull())
   expect(screen.getByRole('dialog').textContent).toContain('Test Winery')
   expect(window.history.state.cellarHistoryIndex).toBe(index - 1)
-  expect(api.insert).toHaveBeenCalledOnce()
+  expect(api.rpc).toHaveBeenCalledWith('save_winery_visit',expect.any(Object))
   expect(window.confirm).not.toHaveBeenCalled()
 })

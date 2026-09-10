@@ -1,4 +1,5 @@
 import {useRef,useState,type FormEvent} from 'react'
+import {WineryPicker} from './WineryPicker'
 import type {CellarData} from './lib/cellar-data'
 import {supabase} from './lib/supabase'
 import {createUniqueId} from './lib/unique-id'
@@ -25,7 +26,6 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
  const [winery,setWinery]=useState(initialWineryId??'')
  const [winerySearch,setWinerySearch]=useState(data.wineries.find(w=>w.id===initialWineryId)?.name??'')
  const [newWinery,setNewWinery]=useState<{name:string;city:string}|null>(null)
- const [choosingWinery,setChoosingWinery]=useState(!initialWineryId)
  const [date,setDate]=useState(existingPurchase?(existingPurchase.acquisitionDate??''):(initialDate??today()))
  const [visitChoice,setVisitChoice]=useState<string|undefined>(initialVisitId??undefined)
  const [tripChoice,setTripChoice]=useState<string|undefined>(initialTripId??undefined)
@@ -36,9 +36,6 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[uncertain,setUncertain]=useState(false)
  const selectedWinery=data.wineries.find(w=>w.id===winery)
  const wineryName=selectedWinery?.name??newWinery?.name??winerySearch
- const wineryQuery=winerySearch.trim().toLowerCase()
- const matchingWineries=wineryQuery?data.wineries.filter(w=>w.name.toLowerCase().includes(wineryQuery)).sort((a,b)=>Number(b.name.toLowerCase().startsWith(wineryQuery))-Number(a.name.toLowerCase().startsWith(wineryQuery))||a.name.localeCompare(b.name)).slice(0,3):[]
- const showWineryResults=choosingWinery&&Boolean(wineryQuery)
  const rack=initialLocationId??data.locations.find(l=>l.isActive&&l.name.toLowerCase()==='rack')?.id??data.locations.find(l=>l.isActive)?.id??''
  const makeLine=():Line=>({id:createUniqueId(),wineId:'',draft:blankWine(winery),quantity:'1',location:rack,price:'',currentValue:''})
  const [lines,setLines]=useState<Line[]>(()=>[makeLine()])
@@ -47,7 +44,7 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
  const requestId=useRef(createUniqueId()),payload=useRef<Record<string,unknown>|null>(null),flight=useRef(false),saved=useRef(false)
  const context=inferEntryContext(data,winery,date,visitChoice,tripChoice)
  const lookupCache=useRef<WineInfoCache>(new Map())
- const selectWinery=(id:string,name:string,pending=false)=>{setWinery(id);setWinerySearch(name);setNewWinery(pending?{name,city:''}:null);setChoosingWinery(false);setVisitChoice(undefined);setTripChoice(undefined);setCreateVisit(false);setLines(items=>items.map(l=>({...l,wineId:'',draft:{...l.draft!,winery_id:id},match:undefined,accepted:false}))) }
+ const selectWinery=(id:string,name:string,pending=false)=>{setWinery(id);setWinerySearch(name);setNewWinery(pending?{name,city:''}:null);setVisitChoice(undefined);setTripChoice(undefined);setCreateVisit(false);setLines(items=>items.map(l=>({...l,wineId:'',draft:{...l.draft!,winery_id:id},match:undefined,accepted:false}))) }
  const submit=async(event:FormEvent<HTMLFormElement>)=>{
   event.preventDefault();if(!supabase||flight.current||saved.current)return
   const form=event.currentTarget,fd=new FormData(form)
@@ -87,9 +84,8 @@ export function AcquisitionModal({auditMode=false,action,householdId,data,initia
    <fieldset className="workflow-fields" disabled={busy||uncertain||saved.current}>
     {auditMode&&<p className="entry-context">Add the wine’s identity here. Return to the audit to count its bottles; inventory changes only when you Apply Audit.</p>}
     <section className="entry-section">
-     <label>Winery<input name="winery_search" type="search" aria-expanded={showWineryResults} aria-controls={showWineryResults?'entry-winery-results':undefined} onKeyDown={e=>{if(showWineryResults&&e.key==='Enter')e.preventDefault();if(showWineryResults&&e.key==='Escape'){e.stopPropagation();setChoosingWinery(false)}}} autoComplete="off" value={winerySearch} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
-     {showWineryResults&&<div id="entry-winery-results" className="entry-suggestions winery-suggestions" role="group" aria-label="Matching wineries">{matchingWineries.map(w=><button key={w.id} type="button" onClick={()=>selectWinery(w.id,w.name)}>{w.name}{w.city?` · ${w.city}`:''}</button>)}{winerySearch.trim()&&!data.wineries.some(w=>w.name.toLowerCase()===winerySearch.trim().toLowerCase())&&<button type="button" onClick={()=>selectWinery('',winerySearch.trim(),true)}>+ Add “{winerySearch.trim()}”</button>}</div>}
-     {newWinery&&<><p className="entry-context">✓ {newWinery.name} will be added with this wine.</p><label>Winery location (optional)<input name="winery_city" placeholder="City or region" value={newWinery.city} onChange={e=>setNewWinery({...newWinery,city:e.target.value})}/></label></>}
+     <WineryPicker wineries={data.wineries} search={winerySearch} selected={Boolean(winery||newWinery)} newWinery={newWinery} context="wine" onSearch={value=>{setWinerySearch(value);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} onSelect={selectWinery} onLocation={city=>setNewWinery(value=>value?{...value,city}:null)}/>
+
     </section>
     {lines.map((item,index)=>{const draft=item.draft!,existing=data.wines.filter(w=>w.wineryId===winery&&draft.name.trim()&&w.name.toLowerCase().includes(draft.name.trim().toLowerCase())).slice(0,5);return <section className="entry-section" key={item.id}>
      {lines.length>1&&<div className="sheet-header"><h3>Wine {index+1}</h3><button type="button" className="text-button" onClick={()=>{if(!draft.name.trim()||window.confirm("Remove this wine from the entry?"))setLines(ls=>ls.filter(l=>l.id!==item.id))}}>Remove wine</button></div>}

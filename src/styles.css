@@ -760,15 +760,15 @@ button:not(:disabled):active { transform: translateY(1px); }
 @media (max-width: 400px) { .inventory-audit { padding-left: 10px; padding-right: 10px; } .audit-search { grid-template-columns: 1fr; } }
 
 /* Entry headers have a title and Close, not the detail page's Back/title/actions grid. */
-.wine-entry-modal .entry-header { position:relative; display:block; min-height:44px; padding-right:56px; }
-.wine-entry-modal .entry-header > div { min-width:0; text-align:left; }
-.wine-entry-modal .entry-header h2 { font-size:clamp(22px,5vw,28px); line-height:1.2; overflow-wrap:normal; word-break:normal; }
-.wine-entry-modal .entry-header .eyebrow { margin-top:0; margin-bottom:6px; }
-.wine-entry-modal .entry-header .icon-close { position:absolute; top:0; right:0; width:44px; height:44px; min-width:44px; }
-.wine-entry-modal .wine-entry-form { margin-top:12px; }
-.wine-entry-modal .winery-suggestions { max-height:none; overflow:visible; }
+:is(.wine-entry-modal, .visit-entry-modal) .entry-header { position:relative; display:block; min-height:44px; padding-right:56px; }
+:is(.wine-entry-modal, .visit-entry-modal) .entry-header > div { min-width:0; text-align:left; }
+:is(.wine-entry-modal, .visit-entry-modal) .entry-header h2 { font-size:clamp(22px,5vw,28px); line-height:1.2; overflow-wrap:normal; word-break:normal; }
+:is(.wine-entry-modal, .visit-entry-modal) .entry-header .eyebrow { margin-top:0; margin-bottom:6px; }
+:is(.wine-entry-modal, .visit-entry-modal) .entry-header .icon-close { position:absolute; top:0; right:0; width:44px; height:44px; min-width:44px; }
+:is(.wine-entry-modal, .visit-entry-modal) .wine-entry-form { margin-top:12px; }
+:is(.wine-entry-modal, .visit-entry-modal) .winery-suggestions { max-height:none; overflow:visible; }
 /* Reserve real scrollable space as well as focus-scroll clearance for sticky actions. */
-.wine-entry-modal { scroll-padding-bottom:calc(112px + env(safe-area-inset-bottom)); }
+:is(.wine-entry-modal, .visit-entry-modal) { scroll-padding-bottom:calc(112px + env(safe-area-inset-bottom)); }
 .wine-entry-form > .workflow-fields { display:grid; gap:inherit; padding-bottom:calc(88px + env(safe-area-inset-bottom)); }
 .wine-entry-form .entry-save { margin:0; padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
 .wine-entry-form :is(input,select,textarea,summary,button) { scroll-margin-bottom:calc(96px + env(safe-area-inset-bottom)); }

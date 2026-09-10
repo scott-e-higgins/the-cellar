@@ -47,7 +47,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 describe.each(['open-bottle', 'add-winery-visit'] as const)('%s save and photos', (action) => {
   it('valid photo: saves parent once, uploads and attaches, then refreshes and closes', async () => {
     mount(action); await fileInput(new File(['photo'], 'test.jpg', { type: 'image/jpeg' })); await submit()
-    expect(action === 'open-bottle' ? api.rpc : api.insert).toHaveBeenCalledOnce()
+    expect(api.rpc).toHaveBeenCalledOnce()
     expect(api.upload).toHaveBeenCalledOnce(); expect(api.upsert).toHaveBeenCalledOnce()
     expect(saved).toHaveBeenCalledOnce(); expect(close).toHaveBeenCalledOnce()
     expect(notice).toHaveBeenCalledWith('Saved successfully.', 'success')
@@ -69,7 +69,7 @@ describe.each(['open-bottle', 'add-winery-visit'] as const)('%s save and photos'
     fireEvent.submit(document.querySelector('form')!)
     fireEvent.click(screen.getByRole('button', { name: 'Retry Photo' }))
     await waitFor(() => expect(close).toHaveBeenCalledOnce())
-    expect(action === 'open-bottle' ? api.rpc : api.insert).toHaveBeenCalledOnce()
+    expect(api.rpc).toHaveBeenCalledOnce()
     if (stage === 'metadata') {
       expect(api.upload).toHaveBeenCalledOnce()
       expect(api.upsert.mock.calls[0][0].id).toBe(api.upsert.mock.calls[1][0].id)
@@ -81,7 +81,7 @@ describe.each(['open-bottle', 'add-winery-visit'] as const)('%s save and photos'
     expect(close).toHaveBeenCalledOnce()
     expect(notice).toHaveBeenCalledWith('Saved, but the screen could not refresh.', 'warning')
     fireEvent.submit(document.querySelector('form')!)
-    expect(action === 'open-bottle' ? api.rpc : api.insert).toHaveBeenCalledOnce()
+    expect(api.rpc).toHaveBeenCalledOnce()
   })
 })
 
@@ -120,16 +120,15 @@ it('rejects two immediate submissions while the first save is pending', async ()
 
 
 it.each(['open-bottle', 'add-winery-visit'] as const)('%s lost save acknowledgement cannot be blindly resubmitted', async(action) => {
-  if(action==='open-bottle') api.rpc.mockRejectedValueOnce(new Error('Connection lost after commit'))
-  else api.insert.mockImplementationOnce(() => ({select: () => ({single: async() => {throw new Error('Connection lost after commit')}})}))
+  api.rpc.mockRejectedValueOnce(new Error('Connection lost after commit'))
   mount(action); await submit()
   expect(screen.getByRole('alert').textContent).toContain('Save could not be confirmed')
   fireEvent.submit(document.querySelector('form')!)
-  expect(action==='open-bottle'?api.rpc:api.insert).toHaveBeenCalledOnce()
+  expect(api.rpc).toHaveBeenCalledOnce()
   saved.mockRejectedValueOnce(new Error('Refresh offline'))
   fireEvent.click(screen.getByRole('button',{name:'Refresh & Check'}));await screen.findByText(/The screen could not refresh/)
   expect(close).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button',{name:'Refresh & Check'}));await waitFor(()=>expect(close).toHaveBeenCalledOnce())
-  expect(action==='open-bottle'?api.rpc:api.insert).toHaveBeenCalledOnce()
+  expect(api.rpc).toHaveBeenCalledOnce()
   expect(notice).toHaveBeenCalledWith(expect.stringContaining('before recording this again'),'warning')
 })

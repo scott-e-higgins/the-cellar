@@ -1,3 +1,6 @@
+import {createUniqueId} from './lib/unique-id'
+import {WineryPicker} from './WineryPicker'
+import {tripsForDate} from './lib/entry-context'
 import { MoveBottleModal } from './MoveBottleModal'
 import type { EntryCompletion } from './lib/entry-types'
 import { AcquisitionModal } from './AcquisitionModal'
@@ -73,6 +76,7 @@ export function WorkflowModal({
   const [message, setMessage] = useState('')
   const savingForm = useRef<HTMLFormElement | null>(null)
   const saved = useRef(false)
+  const visitRequestId = useRef(createUniqueId())
   const inFlight = useRef(false)
   const pendingPhoto = useRef<null | (() => Promise<void>)>(null)
   const [photoFailed, setPhotoFailed] = useState(false)
@@ -109,8 +113,7 @@ export function WorkflowModal({
   }
   const blocked =
     (action === 'record-purchase' && (!data.wines.length || !data.locations.length)) ||
-    (action === 'open-bottle' && !data.bottleLots.length) ||
-    (action === 'add-winery-visit' && !data.wineries.length)
+    (action === 'open-bottle' && !data.bottleLots.length)
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -126,6 +129,8 @@ export function WorkflowModal({
     try {
       const photo = form.get('photo')
       if (photo instanceof File && photo.size > 0) validatePhoto(photo)
+      if (action === 'add-winery-visit' && form.get('trip_ambiguous') === 'yes') throw new Error('Choose a matching Trip or leave it unlinked.')
+      if (action === 'add-winery-visit' && !optional(form, 'winery_id') && !optional(form, 'new_winery_name')) throw new Error('Choose a winery or add it here.')
       if (action === 'add-winery-visit' && optional(form, 'trip_id') && !data.trips.some((trip) => trip.id === optional(form, 'trip_id'))) throw new Error('Choose a valid Travel Journal trip.')
       if (action === 'add-winery') {
         mutationStarted = true
@@ -188,27 +193,18 @@ export function WorkflowModal({
 
       if (action === 'add-winery-visit') {
         mutationStarted = true
-        const { data: createdVisit, error } = await supabase.from('winery_visits').insert({
-          household_id: householdId,
-          winery_id: String(form.get('winery_id')),
-          visit_date: String(form.get('visit_date')),
-          notes: optional(form, 'notes'),
-          favorite: form.get('favorite') === 'on',
-          would_visit_again: optional(form, 'would_visit_again'),
-        }).select('id').single()
+        const { data: createdVisit, error } = await supabase.rpc('save_winery_visit', {
+          p_household_id: householdId, p_request_id: visitRequestId.current,
+          p_fields: {winery_id: optional(form,'winery_id'), new_winery_name: optional(form,'new_winery_name'), new_winery_city: optional(form,'winery_city'), visit_date: String(form.get('visit_date')), notes: optional(form,'notes'), favorite: form.get('favorite')==='on', would_visit_again: optional(form,'would_visit_again'), trip_id: optional(form,'trip_id'), trip_mode: String(form.get('trip_mode'))},
+        })
         if (error) throw error
         saved.current = true
-        const visitId = String(createdVisit.id), tripId = optional(form, 'trip_id')
+        const visitId = String(createdVisit)
         if (photo instanceof File && photo.size > 0) {
           const photographedOn = optional(form, 'photographed_at')
           pendingPhoto.current = createPhotoUpload(supabase, photo, householdId, `visits/${visitId}`, { winery_visit_id: visitId }, { caption: optional(form, 'photo_caption'), photographed_at: photographedOn ? `${photographedOn}T12:00:00` : null, is_hero: true })
         }
-        if (tripId) {
-          const trip = data.trips.find((item) => item.id === tripId)
-          if (!trip) throw new Error('Choose a valid Travel Journal trip.')
-          const linked = await supabase.from('travel_references').insert({ household_id: householdId, winery_visit_id: visitId, external_system: 'travel-journal', external_entity_type: 'trip', external_id: trip.id, display_label: trip.name, deep_link_path: null })
-          if (linked.error) nonBlockingWarning = 'Visit saved, but its Travel Journal trip could not be linked. Edit the visit to add the trip.'
-        }
+
 
       }
 
@@ -246,16 +242,16 @@ export function WorkflowModal({
   if (action === 'add-wine' || action === 'record-purchase') return <AcquisitionModal initialPurchaseId={initialPurchaseId} initialLocationId={initialLocationId} onComplete={onComplete} action={action} householdId={householdId} data={data} initialWineryId={initialWineryId} initialVisitId={initialVisitId} initialDate={initialDate} initialTripId={initialTripId} onClose={onClose} onSaved={onSaved} onNotice={onNotice} />
 
   return (
-    <ModalLayer layer="action" onDismiss={onClose} dismissible={!busy} surfaceClassName="workflow-modal workflow-form-modal" ariaLabelledBy="workflow-title">
-        <div className="sheet-header">
+    <ModalLayer layer="action" onDismiss={onClose} dismissible={!busy} surfaceClassName={`workflow-modal workflow-form-modal ${action==='add-winery-visit'?'visit-entry-modal':''}`} ariaLabelledBy="workflow-title">
+        <div className={`sheet-header ${action==='add-winery-visit'?'entry-header':''}`}>
           <div><p className="eyebrow burgundy">PRIVATE COLLECTION</p><h2 id="workflow-title">{action==='open-bottle'&&initialDepartureType==='gifted'?'Gift Bottle':LABELS[action]}</h2></div>
           <button className="icon-close" onClick={onClose} disabled={busy} aria-label="Close">×</button>
         </div>
-        <form className="workflow-form" onSubmit={submit}>
+        <form className={`workflow-form ${action==='add-winery-visit'?'wine-entry-form':''}`} onSubmit={submit}>
           <fieldset className="workflow-fields" disabled={busy || saved.current || unconfirmed}>
           {action === 'add-winery' && <WineryFields />}
           {action === 'open-bottle' && <OpeningFields data={data} initialWineId={initialWineId} initialDepartureType={initialDepartureType} />}
-          {action === 'add-winery-visit' && <VisitFields data={data} initialWineryId={initialWineryId} />}
+          {action === 'add-winery-visit' && <VisitFields data={data} initialWineryId={initialWineryId} initialDate={initialDate} initialTripId={initialTripId} />}
           </fieldset>
           {message && <p className="form-message error" role="alert">{message}</p>}
           <div className="form-actions"><button type="button" data-discard className="secondary-button" onClick={onClose} disabled={busy}>{saved.current ? 'Done' : 'Cancel'}</button>{unconfirmed ? <button type="button" className="primary-button" disabled={busy} onClick={() => void checkUnconfirmedSave()}>{busy ? 'Refreshing…' : 'Refresh & Check'}</button> : photoFailed ? <button type="button" className="primary-button" disabled={busy} onClick={() => void retryPhoto()}>{busy ? 'Adding photo…' : 'Retry Photo'}</button> : <button className="primary-button" disabled={busy || blocked || saved.current}>{busy ? 'Saving…' : 'Save'}</button>}</div>
@@ -303,9 +299,24 @@ function ChoiceToggle({ name, label, value, options, onChange }: { name:string; 
   return <fieldset className="choice-toggle"><legend>{label}</legend><div>{options.map(([optionValue, optionLabel]) => <label key={optionValue} className={value === optionValue ? 'active' : ''}><input type="radio" name={name} value={optionValue} checked={value === optionValue} onChange={() => onChange(optionValue)} /><span>{optionLabel}</span></label>)}</div></fieldset>
 }
 
-function VisitFields({ data, initialWineryId }: { data: CellarData; initialWineryId: string | null }) {
-  if (!data.wineries.length) return <Prerequisite message="Add the winery before recording a visit." />
-  return <><label>Winery<select name="winery_id" required defaultValue={initialWineryId ?? ''}><option value="" disabled>Select a winery</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label><Field label="Visit date" name="visit_date" type="date" defaultValue={localDate()} required /><label>Travel Journal trip<select name="trip_id" defaultValue=""><option value="">No linked trip</option>{data.trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.name} · {trip.startDate}</option>)}</select></label><Notes label="Visit memories" /><PhotoPicker label="Visit photo" hint="Take Photo or Choose from Photos · optional" /><div className="field-grid"><Field label="Photo caption" name="photo_caption" /><Field label="Photo date" name="photographed_at" type="date" /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><label>Would visit again<select name="would_visit_again"><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="check-field"><input name="favorite" type="checkbox" /> Favorite visit</label></div></details></>
+function VisitFields({ data, initialWineryId, initialDate, initialTripId }: { data: CellarData; initialWineryId: string | null; initialDate: string | null; initialTripId: string | null }) {
+  const [winery,setWinery]=useState(initialWineryId??'')
+  const [search,setSearch]=useState(data.wineries.find(w=>w.id===initialWineryId)?.name??'')
+  const [newWinery,setNewWinery]=useState<{name:string;city:string}|null>(null)
+  const [date,setDate]=useState(initialDate??localDate())
+  const [tripChoice,setTripChoice]=useState<string|undefined>(initialTripId??undefined)
+  const matches=tripsForDate(data,date),ambiguous=tripChoice===undefined&&matches.length>1
+  const tripId=tripChoice??(matches.length===1?matches[0].id:'')
+  return <>
+    <WineryPicker wineries={data.wineries} search={search} selected={Boolean(winery||newWinery)} newWinery={newWinery} context="visit" onSearch={value=>{setSearch(value);setWinery('');setNewWinery(null)}} onSelect={(id,name,pending)=>{setWinery(id);setSearch(name);setNewWinery(pending?{name,city:''}:null)}} onLocation={city=>setNewWinery(value=>value?{...value,city}:null)}/>
+    <input type="hidden" name="winery_id" value={winery}/><input type="hidden" name="new_winery_name" value={newWinery?.name??''}/>
+    <label>Visit date<input name="visit_date" type="date" required value={date} onChange={e=>setDate(e.target.value)}/></label>
+    <p className="entry-context">Trip: {data.trips.find(t=>t.id===tripId)?.name??(ambiguous?'Choose a matching trip':'Not linked')}{tripId?' ✓':''}</p>
+    {ambiguous&&<p role="alert">More than one Trip matches this date. Choose one or leave it unlinked.</p>}
+    <input type="hidden" name="trip_mode" value={tripChoice===undefined?'auto':'manual'}/><input type="hidden" name="trip_ambiguous" value={ambiguous?'yes':'no'}/>
+    <details open={ambiguous||undefined}><summary>Change Trip</summary><label>Travel Journal trip<select name="trip_id" value={ambiguous?'choose':tripId} onChange={e=>setTripChoice(e.target.value)}><option value="choose" disabled>Choose a matching trip</option><option value="">No linked trip</option>{data.trips.map(trip=><option key={trip.id} value={trip.id}>{trip.name} · {trip.startDate}</option>)}</select></label>{tripChoice!==undefined&&<button type="button" className="text-button" onClick={()=>setTripChoice(undefined)}>Use date match</button>}</details>
+    <Notes label="Visit memories" /><PhotoPicker label="Visit photo" hint="Take Photo or Choose from Photos · optional" /><div className="field-grid"><Field label="Photo caption" name="photo_caption" /><Field label="Photo date" name="photographed_at" type="date" /></div><details className="more-details"><summary>More details</summary><div className="details-fields"><label>Would visit again<select name="would_visit_again"><option value="">Not set</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="check-field"><input name="favorite" type="checkbox" /> Favorite visit</label></div></details>
+  </>
 }
 
 
