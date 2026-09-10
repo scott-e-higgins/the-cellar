@@ -11,7 +11,6 @@ import type { CellarData, GiftRecord, OpeningRecord, PhotoRecord, PurchaseRecord
 import { supabase } from './lib/supabase'
 import { createUniqueId } from './lib/unique-id'
 import { StateSelect } from './StateSelect'
-import { ClosureSelect } from './ClosureSelect'
 import { EnrichmentDashboard, RecordEnrichment } from './Enrichment'
 import { userError } from './lib/user-error'
 import { guidanceSourceLabel, guidanceStatus } from './lib/aging-guidance'
@@ -60,8 +59,8 @@ function photosFor(target: ManagementTarget, data: CellarData) {
   })
 }
 
-export function ManagementModal({ target, householdId, data, photoUrls, editable, canGoBack, navigationDepth, returnToEnrichment, onBack, onClose, onNavigate, onVisitDeleted, onAddVisit, onAddPurchase, onSaved, onNotice, onOpenBottle, onGiftBottle, onAddWine }: {
-  onGiftBottle?: (wineId:string)=>void; onAddWine?: (context:EntryContext)=>void; target: ManagementTarget; householdId: string; data: CellarData; photoUrls: Record<string, string>; editable: boolean; canGoBack: boolean; navigationDepth: number; returnToEnrichment: boolean; onBack: () => void; onClose: () => void; onNavigate: (target: ManagementTarget) => void; onVisitDeleted: (wineryId: string) => void; onAddVisit: (wineryId: string) => void; onAddPurchase: (visit: VisitRecord, tripId: string | null) => void; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onOpenBottle: (wineId: string) => void
+export function ManagementModal({ target, householdId, data, photoUrls, editable, canGoBack, navigationDepth, returnToEnrichment, onBack, onClose, onNavigate, onVisitDeleted, onAddVisit, onAddPurchase, onSaved, onNotice, onOpenBottle, onGiftBottle, onMoveBottle, onAddWine }: {
+  onGiftBottle?: (wineId:string)=>void; onMoveBottle?: (wineId:string)=>void; onAddWine?: (context:EntryContext)=>void; target: ManagementTarget; householdId: string; data: CellarData; photoUrls: Record<string, string>; editable: boolean; canGoBack: boolean; navigationDepth: number; returnToEnrichment: boolean; onBack: () => void; onClose: () => void; onNavigate: (target: ManagementTarget) => void; onVisitDeleted: (wineryId: string) => void; onAddVisit: (wineryId: string) => void; onAddPurchase: (visit: VisitRecord, tripId: string | null) => void; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onOpenBottle: (wineId: string) => void
 }) {
   const [tab, setTab] = useState<DetailTab>('details')
   const [editing, setEditing] = useState(false)
@@ -118,9 +117,9 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
       {recordTarget && tab === 'details' && <>
         {!editing&&editable&&onAddWine&&target.kind==='winery'&&<button className="secondary-button" onClick={()=>onAddWine({wineryId:target.record.id})}>Add Wine / Bottles</button>}
         {!editing&&editable&&onAddWine&&target.kind==='purchase'&&<button className="secondary-button" onClick={()=>onAddWine({purchaseId:target.record.id,date:target.record.acquisitionDate,visitId:target.record.wineryVisitId,tripId:data.travelReferences.find(r=>r.purchaseId===target.record.id)?.externalId,wineryId:data.wines.find(w=>w.id===data.purchaseItems.find(i=>i.purchaseId===target.record.id)?.wineId)?.wineryId})}>Add another Wine</button>}
-        {!returnToEnrichment && <RecordHero target={target} data={data} hasPhoto={Boolean(hero)} url={hero ? photoUrls[hero.id] : undefined} editable={editable} onView={() => hero && viewPhoto(hero)} onAdd={() => { setPhotoPrompt(true); setTab('photos') }} />}
+        {!returnToEnrichment && !(editing && target.kind === 'wine') && <RecordHero target={target} data={data} hasPhoto={Boolean(hero)} url={hero ? photoUrls[hero.id] : undefined} editable={editable} onView={() => hero && viewPhoto(hero)} onAdd={() => { setPhotoPrompt(true); setTab('photos') }} />}
         {returnToEnrichment && (target.kind==='wine'||target.kind==='winery') && <RecordEnrichment key={currentKey} kind={target.kind} entityId={target.record.id} data={data} editable={editable} onSaved={onSaved} onAccepted={backFromCurrent} onNotice={onNotice} reviewFocus />}
-        {target.kind === 'wine' && !returnToEnrichment && <WineDetails wine={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNotice={onNotice} onNavigate={navigateFromCurrent} onOpenBottle={onOpenBottle} onGiftBottle={onGiftBottle} onEnrichmentAccepted={returnToEnrichment ? backFromCurrent : undefined} />}
+        {target.kind === 'wine' && !returnToEnrichment && <WineDetails wine={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNotice={onNotice} onNavigate={navigateFromCurrent} onOpenBottle={onOpenBottle} onGiftBottle={onGiftBottle} onMoveBottle={onMoveBottle} onEnrichmentAccepted={returnToEnrichment ? backFromCurrent : undefined} />}
         {target.kind === 'winery' && !returnToEnrichment && <WineryDetails winery={target.record} data={data} photoUrls={photoUrls} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNotice={onNotice} onNavigate={navigateFromCurrent} onAddVisit={onAddVisit} onEnrichmentAccepted={returnToEnrichment ? backFromCurrent : undefined} />}
         {target.kind === 'opening' && <OpeningDetails key={target.record.id} opening={target.record} data={data} onNavigate={navigateFromCurrent} editable={editable} householdId={householdId} onSaved={onSaved} onNotice={onNotice} setBusy={setBusy} />}
         {editing && (target.kind==='purchase'||target.kind==='gift') && <HistoryCorrection key={currentKey} kind={target.kind} record={target.record} data={data} householdId={householdId} onCancel={()=>setEditing(false)} onSaved={onSaved} onNotice={onNotice}/>}
@@ -161,36 +160,37 @@ function EditSection({ title, children }: { title: string; children: ReactNode }
   return <section className="edit-form-section"><h3>{title}</h3><div className="edit-section-fields">{children}</div></section>
 }
 
-function WineDetails({ wine, data, editing, setEditing, editable, busy, setBusy, setMessage, householdId, onSaved, onNotice, onNavigate, onOpenBottle, onGiftBottle, onEnrichmentAccepted }: { wine: WineRecord; data: CellarData; editing: boolean; setEditing: (value: boolean) => void; editable: boolean; busy: boolean; setBusy: (value: boolean) => void; setMessage: (value: string) => void; householdId: string; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onNavigate: (target: ManagementTarget) => void; onOpenBottle: (wineId: string) => void; onGiftBottle?: (wineId:string)=>void; onEnrichmentAccepted?: () => void }) {
+function WineDetails({ wine, data, editing, setEditing, editable, busy, setBusy, setMessage, householdId, onSaved, onNotice, onNavigate, onOpenBottle, onGiftBottle, onMoveBottle, onEnrichmentAccepted }: { wine: WineRecord; data: CellarData; editing: boolean; setEditing: (value: boolean) => void; editable: boolean; busy: boolean; setBusy: (value: boolean) => void; setMessage: (value: string) => void; householdId: string; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onNavigate: (target: ManagementTarget) => void; onOpenBottle: (wineId: string) => void; onGiftBottle?: (wineId:string)=>void; onMoveBottle?: (wineId:string)=>void; onEnrichmentAccepted?: () => void }) {
   const preferences = useMemo(() => Object.fromEntries(data.preferences.filter((preference) => preference.wineId === wine.id).map((preference) => [preference.personId, preference])), [data.preferences, wine.id])
   const purchases = data.purchaseItems.filter((item) => item.wineId === wine.id).map((item) => ({ item, purchase: data.purchases.find((purchase) => purchase.id === item.purchaseId) })).filter((entry) => entry.purchase)
+  const hasOnlineInfo = data.wineOnlineInfo.some(info => info.entityId === wine.id && Object.keys(info.acceptedData).length > 0)
+  const storage = data.bottleLots.filter(lot => lot.wineId === wine.id && lot.quantity > 0).reduce((groups, lot) => {
+    const current = groups.get(lot.storageLocationId) ?? { name: lot.storageLocationName, quantity: 0, aging: 0 }
+    current.quantity += lot.quantity; current.aging += lot.agingQuantity; groups.set(lot.storageLocationId, current); return groups
+  }, new Map<string, { name: string; quantity: number; aging: number }>())
+  const onlineInformation = <RecordEnrichment kind="wine" entityId={wine.id} data={data} editable={editable} onSaved={onSaved} onAccepted={onEnrichmentAccepted} onNotice={onNotice} />
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!supabase || !editable) return
     setBusy(true); setMessage(''); const formElement = event.currentTarget; const form = new FormData(formElement)
     try {
       const nonVintage = form.get('non_vintage') === 'on'
-      const result = await supabase.from('wines').update({ winery_id: optional(form, 'winery_id'), name: String(form.get('name')).trim(), vintage: nonVintage ? null : numberOrNull(form, 'vintage'), non_vintage: nonVintage, blend_description: optional(form, 'blend_description'), style: optional(form, 'style'), category: optional(form, 'category'), sweetness: optional(form, 'sweetness'), country: optional(form, 'country'), state: optional(form, 'state'), vineyard: optional(form, 'vineyard'), closure: optional(form, 'closure'), official_winery_notes: optional(form, 'official_winery_notes'), personal_notes: optional(form, 'personal_notes'), favorite: form.get('favorite') === 'on' }).eq('household_id', householdId).eq('id', wine.id)
+      const result = await supabase.rpc('save_wine_personal', {
+        p_household_id: householdId, p_wine_id: wine.id,
+        p_fields: { winery_id: optional(form, 'winery_id'), name: String(form.get('name')).trim(), vintage: nonVintage ? null : numberOrNull(form, 'vintage'), non_vintage: nonVintage, personal_notes: optional(form, 'personal_notes'), favorite: form.get('favorite') === 'on' },
+        p_preferences: data.people.map(person => ({ person_id: person.id, favorite: form.get(`favorite_${person.id}`) === 'on', buy_again: optional(form, `buy_again_${person.id}`), notes: optional(form, `notes_${person.id}`) })),
+      })
       if (result.error) throw result.error
-      for (const person of data.people) { const preference = await supabase.from('wine_preferences').upsert({ household_id: householdId, wine_id: wine.id, person_id: person.id, favorite: form.get(`favorite_${person.id}`) === 'on', buy_again: optional(form, `buy_again_${person.id}`), notes: optional(form, `notes_${person.id}`) }, { onConflict: 'wine_id,person_id' }); if (preference.error) throw preference.error }
       await finishSuccessfulAction({ form: formElement, refresh: onSaved, finish: () => setEditing(false), notice: onNotice, message: 'Wine saved.' })
     } catch (error) { setMessage(userError(error, 'The wine could not be saved. Please try again.')) } finally { setBusy(false) }
   }
-  if (editing) return <form className="workflow-form detail-form edit-record-form" onSubmit={save}><fieldset className="workflow-fields" disabled={busy}>
-    <EditSection title="Identity">
+  if (editing) return <form aria-busy={busy} className="workflow-form detail-form edit-record-form" onSubmit={save}><fieldset className="workflow-fields" disabled={busy}>
+    <p>Our Information · identity, notes and preferences. Find Wine Info supplies online reference information separately.</p>
+    <EditSection title="This wine">
       <label>Winery<select name="winery_id" defaultValue={wine.wineryId ?? ''}><option value="">No winery</option>{data.wineries.map((winery) => <option key={winery.id} value={winery.id}>{winery.name}</option>)}</select></label>
       <label>Wine name<input name="name" required defaultValue={wine.name} /></label>
       <div className="field-grid"><label>Vintage<input name="vintage" type="number" min="1800" defaultValue={wine.vintage ?? ''} /></label><label className="check-field paired-check-field"><input name="non_vintage" type="checkbox" defaultChecked={wine.nonVintage} /> Non-vintage</label></div>
     </EditSection>
-    <EditSection title="Wine profile">
-      <div className="field-grid"><label>Category<input name="category" defaultValue={wine.category ?? ''} /></label><label>Style<input name="style" defaultValue={wine.style ?? ''} /></label><label>Sweetness<input name="sweetness" defaultValue={wine.sweetness ?? ''} /></label><ClosureSelect defaultValue={wine.closure} /></div>
-      <label>Varietal or blend<input name="blend_description" defaultValue={wine.blendDescription ?? ''} /></label>
-      <label>Vineyard<input name="vineyard" defaultValue={wine.vineyard ?? ''} /></label>
-    </EditSection>
-    <EditSection title="Origin">
-      <div className="field-grid"><label>Country<input name="country" defaultValue={wine.country ?? ''} /></label><StateSelect defaultValue={wine.state ?? ''} /></div>
-    </EditSection>
-    <EditSection title="Recorded information">
-      <label>Official winery notes<textarea name="official_winery_notes" rows={3} defaultValue={wine.officialWineryNotes ?? ''} /></label>
+    <EditSection title="Our information">
       <label>Our notes<textarea name="personal_notes" rows={3} defaultValue={wine.personalNotes ?? ''} /></label>
       <label className="check-field"><input name="favorite" type="checkbox" defaultChecked={wine.favorite} /> Household favorite</label>
     </EditSection>
@@ -200,13 +200,15 @@ function WineDetails({ wine, data, editing, setEditing, editable, busy, setBusy,
     <div className="form-actions edit-form-actions"><button type="button" data-discard className="secondary-button" onClick={() => setEditing(false)} disabled={busy}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : 'Save wine'}</button></div>
   </fieldset></form>
   return <div className="detail-content">
+    <section className="detail-section"><h3>In Our Cellar</h3><p>{wine.availableQuantity} {wine.availableQuantity === 1 ? 'bottle' : 'bottles'}</p>{[...storage].map(([id, location]) => <p key={id}><strong>{location.name}</strong> — {location.quantity}{location.aging > 0 ? ` · ${location.aging} Aging` : ''}</p>)}{editable && wine.availableQuantity > 0 && onMoveBottle && <button className="secondary-button" onClick={() => onMoveBottle(wine.id)}>Change Location</button>}</section>
     {wine.availableQuantity > 0 && editable && <div className="field-grid"><button className="primary-button" onClick={() => onOpenBottle(wine.id)}>Open Bottle</button><button className="secondary-button" onClick={() => (onGiftBottle??onOpenBottle)(wine.id)}>Gift Bottle</button></div>}
+    {!hasOnlineInfo && onlineInformation}
     <section className="detail-section"><h3>At a glance</h3><dl className="fact-grid"><Fact label="Vintage" value={wine.nonVintage ? 'NV' : wine.vintage?.toString()} /><Fact label="Type" value={wineClassification(wine,data).label ? `${wineClassification(wine,data).label}${wineClassification(wine,data).labelSourced ? ' · accepted online info' : ''}` : null} /><Fact label="Location" value={wine.storageNames.join(', ') || 'Not recorded'} /><Fact label="Closure" value={wine.closure} /></dl></section>
     <section className="detail-section"><p className="eyebrow burgundy">PERSONAL</p><h3>Our experience</h3>{wine.personalNotes && <p>{wine.personalNotes}</p>}{data.people.map(person=>{const preference=data.preferences.find(p=>p.wineId===wine.id&&p.personId===person.id);const reviews=data.reviews.filter(r=>r.personId===person.id&&data.openings.some(o=>o.id===r.openingId&&o.wineId===wine.id));return (preference?.notes||reviews.length>0||preference?.buyAgain) && <div className="personal-experience" key={person.id}><strong>{person.displayName}</strong>{preference?.notes&&<p>{preference.notes}</p>}{preference?.buyAgain&&<p>Buy again: {displayValue(preference.buyAgain)}</p>}{reviews.map(review=><div key={review.id}>{review.rating!=null&&<StarRatingDisplay value={review.rating} showValue />}{review.tastingNotes&&<p>{review.tastingNotes}</p>}{review.buyAgain&&<p>Buy again: {displayValue(review.buyAgain)}</p>}</div>)}</div>})}{!wine.personalNotes&&!data.openings.some(o=>o.wineId===wine.id)&&<p className="empty-copy compact">No tasting memories recorded yet.</p>}{data.openings.filter(o=>o.wineId===wine.id).map(opening=><RecordLink key={opening.id} title={opening.status==='open'?'Finish or review this bottle':'Opening & tasting notes'} subtitle={date(opening.openedAt)} onClick={()=>onNavigate({kind:'opening',record:opening})}/>)}</section>
     {purchases.length > 0 && <section className="detail-section"><h3>How it came to us</h3><div className="record-list">{purchases.map(({ item, purchase }) => <RecordLink key={item.id} title={`${item.quantity} bottle${item.quantity === 1 ? '' : 's'} · ${purchase!.acquisitionType === 'gift' ? 'Gift' : 'Purchased'}`} subtitle={[purchase!.acquisitionDate ? date(purchase!.acquisitionDate) : null, purchase!.acquisitionType === 'gift' ? purchase!.giftFrom : purchase!.purchaseLocation, item.totalCost == null ? null : money(item.totalCost)].filter(Boolean).join(' · ')} onClick={() => onNavigate({ kind: 'purchase', record: purchase! })} />)}</div></section>}
     <AgingSection wine={wine} data={data} editable={editable} householdId={householdId} onSaved={onSaved} onNotice={onNotice} setMessage={setMessage} />
     {wine.wineryId && <section className="detail-section"><h3>Winery</h3><RecordLink title={wine.wineryName??'Winery'} onClick={()=>{const winery=data.wineries.find(w=>w.id===wine.wineryId);if(winery)onNavigate({kind:'winery',record:winery})}} /></section>}
-    <RecordEnrichment kind="wine" entityId={wine.id} data={data} editable={editable} onSaved={onSaved} onAccepted={onEnrichmentAccepted} />{(wine.blendDescription || wine.vineyard || wine.officialWineryNotes) && <section className="detail-section"><h3>Cellar Details</h3>{wine.blendDescription && <p>{wine.blendDescription}</p>}{wine.vineyard && <p><strong>Vineyard:</strong> {wine.vineyard}</p>}{wine.officialWineryNotes && <details className="read-more"><summary>Previously recorded winery notes</summary><p>{wine.officialWineryNotes}</p></details>}</section>}
+    {hasOnlineInfo && onlineInformation}{[wine.category,wine.style,wine.sweetness,wine.blendDescription,wine.country,wine.state,wine.region,wine.appellation,wine.vineyard,wine.closure,wine.officialWineryNotes].some(Boolean) && <details className="detail-section more-details"><summary>Previously recorded reference information</summary><dl className="fact-grid">{[['Type',wine.category],['Style',wine.style],['Sweetness',wine.sweetness],['Varietal or blend',wine.blendDescription],['Country',wine.country],['State',wine.state],['Region',wine.region],['Appellation',wine.appellation],['Vineyard',wine.vineyard],['Closure',wine.closure]].filter(([,value])=>value).map(([label,value])=><Fact key={label} label={label!} value={value} />)}</dl>{wine.officialWineryNotes && <p>{wine.officialWineryNotes}</p>}</details>}
   </div>
 }
 
