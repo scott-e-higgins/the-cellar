@@ -17,6 +17,7 @@ import { OVERLAY_Z_INDEX } from './lib/interaction'
 import { LightboxLayer, ModalLayer } from './OverlayLayer'
 import { restoredManagementStack } from './lib/overlay-history'
 import { StarRatingDisplay } from './StarRating'
+import { parseCellarDeepLink } from './lib/deep-links'
 
 const QUICK_ACTIONS: Array<{ id: QuickAction; label: string; hint: string; icon: IconName }> = [
   { id: 'add-wine', label: 'Add Wine', hint: 'Add a wine and its bottles', icon: 'bottle' },
@@ -238,6 +239,9 @@ function currentTarget(target: ManagementTarget | null, data: CellarData) {
 
 export function CellarShell({ household, preview = false, onSignOut }: { household: HouseholdContext; preview?: boolean; onSignOut: () => void }) {
   const { view, go } = useHashView()
+  const directLink = useMemo(() => parseCellarDeepLink(), [])
+  const directLinkHandled = useRef(false)
+  const directLinkWasOpen = useRef(false)
   const [quickOpen, setQuickOpen] = useState(false)
   const [activeAction, setActiveAction] = useState<QuickAction | null>(null)
   const [openingWineId, setOpeningWineId] = useState<string | null>(null)
@@ -306,7 +310,11 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
     setManagementStack(stack)
     window.history.replaceState({ ...window.history.state, cellarOverlay: { type: 'management', stack } }, '')
   }
-  const closeManagement = () => { if (managementStack.length) window.history.go(-managementStack.length); else setManagementStack([]) }
+  const closeManagement = () => {
+    if (directLinkWasOpen.current && directLink?.returnTo) { window.location.assign(directLink.returnTo); return }
+    if (managementStack.length) window.history.go(-managementStack.length)
+    else setManagementStack([])
+  }
   const showCardPhoto = (photo: PhotoRecord) => { setCardPhoto(photo); pushOverlay({ type: 'card-photo', photo }) }
 
   const refresh = useCallback(async () => {
@@ -333,6 +341,27 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
   useEffect(() => {
     void refresh().catch(() => {})
   }, [refresh])
+
+  useEffect(() => {
+    if (preview || dataLoading || directLinkHandled.current || !directLink) return
+    directLinkHandled.current = true
+    const target: ManagementTarget | null = directLink.kind === 'visit'
+      ? (() => { const record = data.visits.find((item) => item.id === directLink.id); return record ? { kind: 'visit', record } : null })()
+      : (() => { const record = data.wines.find((item) => item.id === directLink.id); return record ? { kind: 'wine', record } : null })()
+    if (!target) {
+      setToast({ message: 'That linked Cellar record is unavailable.', tone: 'warning' })
+      return
+    }
+    const stack: ManagementTarget[] = [target]
+    setManagementStack(stack)
+    pushCellarHistory({ ...window.history.state, cellarOverlay: { type: 'management', stack } })
+  }, [data, dataLoading, directLink, preview])
+
+  useEffect(() => {
+    if (!directLinkHandled.current || !directLink?.returnTo) return
+    if (managementTarget) { directLinkWasOpen.current = true; return }
+    if (directLinkWasOpen.current) window.location.assign(directLink.returnTo)
+  }, [directLink, managementTarget])
 
   useEffect(() => {
     let active=true, inFlight=false

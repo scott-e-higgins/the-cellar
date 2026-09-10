@@ -1,6 +1,6 @@
 # Travel Journal integration plan
 
-Status: planned separately after Cellar v1 stability. This document authorizes no Travel Journal changes.
+Status: implemented in Cellar v0.24.0 and Travel Journal v1.2.0.
 
 ## Safe boundary
 
@@ -9,13 +9,15 @@ Status: planned separately after Cellar v1 stability. This document authorizes n
 - Purchases, winery visits, and openings can each have an optional trip reference.
 - Both apps remain independently deployable and usable if the other app is unavailable.
 
-## Controlled implementation sequence
+## Implemented behavior
 
-1. Confirm a stable Travel Journal trip identifier and deep-link route without modifying trip identity.
-2. Add a read-only trip picker/API contract for authenticated members of the same future Higgs Home household.
-3. Resolve shared identity explicitly; do not infer membership from email or editable user metadata.
-4. Add Cellar links such as “Purchased during Finger Lakes 2025” and “View Trip.”
-5. In a separate Travel Journal change, add read-only wine/winery references back to Cellar.
-6. Test authorization failures, missing/deleted trips, stale labels, and both apps operating independently.
+1. `public.get_trip_cellar_activity(uuid)` exposes only the minimal read-only card data for a Travel trip.
+2. The function runs as the signed-in user, so Travel trip RLS and Cellar household RLS both have to allow the request.
+3. Travel shows **Wine & Wineries** only when the trip has linked Cellar activity.
+4. Visit and wine cards deep-link to the exact Cellar record using UUIDs.
+5. Cellar validates the optional return URL against known Travel Journal origins before using it.
+6. The Family Viewer is excluded at both the Travel client and Supabase authorization layers.
+
+The integration does not copy trip, wine, winery, visit, purchase, or photo records. Both apps remain independently usable if the other app is unavailable.
 
 No cross-app secrets belong in either public repository. Any future server-to-server credential must remain in a protected runtime secret store.
