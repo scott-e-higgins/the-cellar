@@ -1,106 +1,129 @@
-import { useRef, useState, type FormEvent } from 'react'
-import type { CellarData } from './lib/cellar-data'
-import { supabase } from './lib/supabase'
-import { createUniqueId } from './lib/unique-id'
-import { finishSuccessfulAction, type NoticeTone } from './lib/interaction'
-import { userError } from './lib/user-error'
-import { ModalLayer } from './OverlayLayer'
-import { US_STATES } from './StateSelect'
-
-export type WineDraft = Record<string, string> & { name: string; winery_id: string; vintage: string; non_vintage: string }
-export type AcquisitionLine = { id: string; wineId: string; draft: WineDraft | null; quantity: string; location: string; price: string; currentValue: string }
-const today = () => { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10) }
-const blankWine = (winery: string): WineDraft => ({ name: '', winery_id: winery, vintage: '', non_vintage: 'false', closure: 'Cork' })
-const numeric = (value: string | undefined) => value?.trim() ? Number(value) : null
-export function acquisitionItems(lines: AcquisitionLine[], gift: boolean) {
-  return lines.map((line) => {
-    const quantity = Number(line.quantity), price = gift ? null : numeric(line.price)
-    if ([price, numeric(line.currentValue)].some((value) => value !== null && (!Number.isFinite(value) || value < 0))) throw new Error('Enter a valid non-negative bottle price or value.')
-    if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Enter a whole number of bottles for each wine.')
-    if (!line.location) throw new Error('Choose where to put each wine.')
-    if (!line.wineId && !line.draft?.name.trim()) throw new Error('Choose or name each wine.')
-    return { wine_id: line.wineId || null, new_wine: line.draft ? { ...line.draft, name: line.draft.name.trim(), non_vintage: line.draft.non_vintage === 'true', vintage: line.draft.non_vintage === 'true' ? null : numeric(line.draft.vintage) } : undefined, quantity, storage_location_id: line.location, unit_price: price, total_cost: price === null ? null : Math.round(price * quantity * 100) / 100, current_value_per_bottle: gift ? null : numeric(line.currentValue) ?? price }
-  })
-}
-
-export function AcquisitionModal({ action, householdId, data, initialWineryId, initialVisitId, initialDate, initialTripId, onClose, onSaved, onNotice }: {
-  action: 'add-wine' | 'record-purchase'; householdId: string; data: CellarData; initialWineryId?: string | null; initialVisitId?: string | null; initialDate?: string | null; initialTripId?: string | null;
-  onClose: () => void; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void
-}) {
-  const newWine = action === 'add-wine'
-  const [step, setStep] = useState(newWine ? 1 : 2)
-  const [definitionOnly, setDefinitionOnly] = useState(false)
-  const [winery, setWinery] = useState(initialWineryId ?? '')
-  const rack = data.locations.find((item) => item.isActive && item.name.toLowerCase() === 'rack') ?? data.locations.find((item) => item.isActive)
-  const line = (draft = false): AcquisitionLine => ({ id: createUniqueId(), wineId: '', draft: draft ? blankWine(winery) : null, quantity: '1', location: rack?.id ?? '', price: '', currentValue: '' })
-  const [lines, setLines] = useState<AcquisitionLine[]>(() => [line(newWine)])
-  const [kind, setKind] = useState('purchased')
-  const [date, setDate] = useState(initialDate ?? today())
-  const [trip, setTrip] = useState(initialTripId ?? '')
-  const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [uncertain, setUncertain] = useState(false)
-  const requestId = useRef(createUniqueId()), inFlight = useRef(false), saved = useRef(false)
-  const payload = useRef<Record<string, unknown> | null>(null)
-  const update = (id: string, patch: Partial<AcquisitionLine>) => setLines((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item))
-  const selectedWinery = data.wineries.find((item) => item.id === winery)
-  const title = newWine ? 'Add Wine' : 'Add Bottles'
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!supabase || inFlight.current || saved.current) return
-    const formElement = event.currentTarget
-    if (step === 1 && !definitionOnly) { setStep(2); return }
-    inFlight.current = true; setBusy(true); setMessage('')
-    try {
-      if (!uncertain || !payload.current) {
-        const form = new FormData(formElement), gift = kind === 'gift'
-        const items = definitionOnly ? [{ new_wine: { ...lines[0].draft, non_vintage: lines[0].draft?.non_vintage === 'true', vintage: lines[0].draft?.non_vintage === 'true' ? null : numeric(lines[0].draft?.vintage) } }] : acquisitionItems(lines, gift)
-        const valued = items as ReturnType<typeof acquisitionItems>
-        const subtotal = definitionOnly || gift || valued.some((item) => item.total_cost === null) ? null : valued.reduce((sum, item) => sum + (item.total_cost ?? 0), 0)
-        const tax = gift ? null : numeric(String(form.get('tax') ?? '')), discount = gift ? null : numeric(String(form.get('discount') ?? ''))
-        payload.current = { p_household_id: householdId, p_request_id: requestId.current, p_definition_only: definitionOnly, p_lines: items, p_details: { acquisition_type: kind, acquisition_date: date, purchase_location: gift ? null : String(form.get('purchase_location') ?? ''), gift_from: gift ? String(form.get('gift_from') ?? '') : null, visit_id: initialVisitId, trip_id: trip || null, notes: String(form.get('notes') ?? ''), selected_by_person_id: gift ? null : form.get('selected_by_person_id'), purchased_by_person_id: gift ? null : form.get('purchased_by_person_id'), subtotal, tax, discount, total_cost: gift ? null : numeric(String(form.get('total_cost') ?? '')) ?? (subtotal === null ? null : subtotal + (tax ?? 0) - (discount ?? 0)) } }
-      }
-      const result = await supabase.rpc('save_acquisition', payload.current!)
-      if (result.error) {
-        const unknown = !result.error.code || /fetch|network|timeout|connection/i.test(result.error.message)
-        setUncertain(unknown)
-        throw result.error
-      }
-      saved.current = true
-      await finishSuccessfulAction({ form: formElement, refresh: onSaved, finish: onClose, notice: onNotice, message: definitionOnly ? 'Wine saved without bottles.' : 'Wines and bottles saved successfully.' })
-    } catch (error) { setMessage(userError(error, 'The save could not be confirmed. Retry Save safely retries the same purchase.')) }
-    finally { inFlight.current = false; setBusy(false) }
-  }
-  return <ModalLayer layer="action" onDismiss={onClose} dismissible={!busy} surfaceClassName="workflow-modal workflow-form-modal" ariaLabelledBy="acquisition-title">
-    <div className="sheet-header"><div><p className="eyebrow burgundy">OUR COLLECTION</p><h2 id="acquisition-title">{title}</h2></div><button className="icon-close" onClick={onClose} disabled={busy} aria-label="Close">×</button></div>
-    <form className="workflow-form acquisition-form" onSubmit={submit}>
-      <fieldset className="workflow-fields" disabled={busy || uncertain || saved.current}>
-        {newWine && <div hidden={step !== 1}><WineEditor value={lines[0].draft!} onChange={(draft) => update(lines[0].id, { draft })} data={data} prefix={lines[0].id} required={step === 1} /><label className="check-field"><input name="definition_only" type="checkbox" checked={definitionOnly} onChange={(event) => setDefinitionOnly(event.target.checked)} /> Save wine without adding bottles</label></div>}
-        <div hidden={step !== 2} className="acquisition-body">
-          {initialVisitId && <div className="workflow-context"><strong>Purchase from this winery visit</strong><small>{selectedWinery?.name} · {initialDate}{initialTripId ? ' · Trip linked' : ''}</small></div>}
-          {!newWine && <label>Winery<select name="purchase_winery" value={winery} onChange={(event) => setWinery(event.target.value)} disabled={Boolean(initialVisitId)}><option value="">Any winery</option>{data.wineries.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}
-          <div className="acquisition-lines">{lines.map((item, index) => <section className="acquisition-line" key={item.id}>
-            <div className="section-action-heading"><h3>{item.draft?.name || `Wine ${index + 1}`}</h3>{lines.length > 1 && <button type="button" className="text-button" onClick={() => { if (window.confirm('Remove this wine from the purchase?')) setLines(lines.filter((row) => row.id !== item.id)) }}>Remove</button>}</div>
-            {newWine && index === 0 ? <button type="button" className="text-button" onClick={() => setStep(1)}>Edit wine information</button> : <>
-              {!item.draft ? <><label>Wine<select name={`wine_${item.id}`} value={item.wineId} required={step === 2} onChange={(event) => update(item.id, { wineId: event.target.value })}><option value="">Choose a wine</option>{[...data.wines].sort((a,b) => Number(b.wineryId === winery) - Number(a.wineryId === winery)).map((wine) => <option key={wine.id} value={wine.id}>{wine.wineryName ? `${wine.wineryName} · ` : ''}{wine.name} · {wine.nonVintage ? 'NV' : wine.vintage ?? 'Vintage unknown'}</option>)}</select></label><button className="text-button" type="button" onClick={() => update(item.id, { wineId: '', draft: blankWine(winery) })}>Create a missing wine</button></> : <><WineEditor value={item.draft} onChange={(draft) => update(item.id, { draft })} data={data} prefix={item.id} required={step === 2} /><button type="button" className="text-button" onClick={() => { if (!item.draft?.name || window.confirm('Discard the new wine information and choose an existing wine?')) update(item.id, { draft: null }) }}>Choose an existing wine instead</button></>}
-            </>}
-            <div className="field-grid"><label>Quantity<input name={`quantity_${item.id}`} type="number" min="1" step="1" required={step === 2} value={item.quantity} onChange={(event) => update(item.id, { quantity: event.target.value })} /></label><label>Put bottles in<select name={`location_${item.id}`} required={step === 2} value={item.location} onChange={(event) => update(item.id, { location: event.target.value })}><option value="">Choose location</option>{data.locations.filter((location) => location.isActive).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label></div>
-            <div hidden={kind === 'gift'}><label>Price per bottle (optional)<input name={`price_${item.id}`} type="number" min="0" step="0.01" value={item.price} onChange={(event) => update(item.id, { price: event.target.value })} /></label><details className="more-details"><summary>Bottle value</summary><label>Current value per bottle<input name={`value_${item.id}`} type="number" min="0" step="0.01" value={item.currentValue} onChange={(event) => update(item.id, { currentValue: event.target.value })} /></label></details></div>
-          </section>)}</div>
-          {!newWine && <button type="button" className="secondary-button" onClick={() => setLines([...lines, line()])}>Add another wine</button>}
-          <div className="field-grid"><label>Acquisition<select name="acquisition_type" value={kind} onChange={(event) => setKind(event.target.value)}><option value="purchased">Purchased</option><option value="gift">Received as a gift</option></select></label><label>{kind === 'gift' ? 'Date received' : 'Purchase date'}<input name="acquisition_date" type="date" value={date} required={step === 2 && kind === 'purchased'} onChange={(event) => setDate(event.target.value)} /></label></div>
-          <fieldset className="workflow-fields" hidden={kind === 'gift'} disabled={kind === 'gift'}><label>Purchased at<input name="purchase_location" key={winery} defaultValue={selectedWinery?.name ?? (newWine ? data.wineries.find((w) => w.id === lines[0].draft?.winery_id)?.name : '')} /></label></fieldset>
-          <fieldset className="workflow-fields" hidden={kind !== 'gift'} disabled={kind !== 'gift'}><label>Gift from<input name="gift_from" /></label></fieldset>
-          <details className="more-details"><summary>More purchase details</summary><div className="details-fields"><label>Linked Trip<select name="trip_id" disabled={Boolean(initialTripId)} value={trip} onChange={(event) => setTrip(event.target.value)}><option value="">No linked trip</option>{data.trips.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><fieldset className="workflow-fields" disabled={kind === 'gift'} hidden={kind === 'gift'}><div className="field-grid">{[['tax','Tax'],['discount','Discount'],['total_cost','Final total']].map(([name,label]) => <label key={name}>{label}<input name={name} type="number" min="0" step="0.01" /></label>)}</div>{[['purchased_by_person_id','Purchased by'],['selected_by_person_id','Selected by']].map(([name,label]) => <label key={name}>{label}<select name={name}><option value="">Not specified</option>{data.people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>)}</fieldset><label>Notes<textarea name="notes" rows={3} /></label></div></details>
-        </div>
-      </fieldset>
-      {message && <p className="form-message error" role="alert">{message}</p>}
-      {uncertain && <p className="form-message">The connection was interrupted. Retry Save checks the same purchase; it will not add the bottles twice.</p>}
-      <div className="form-actions"><button type="button" data-discard className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy || saved.current}>{busy ? 'Saving…' : uncertain ? 'Retry Save' : step === 1 && !definitionOnly ? 'Continue to bottles' : 'Save'}</button></div>
-    </form>
-  </ModalLayer>
-}
-
-function WineEditor({ value, onChange, data, prefix, required }: { value: WineDraft; onChange: (value: WineDraft) => void; data: CellarData; prefix: string; required: boolean }) {
-  const field = (name: string, label: string, type = 'text') => <label key={name}>{label}<input name={`${prefix}_${name}`} type={type} value={value[name] ?? ''} onChange={(event) => onChange({ ...value, [name]: event.target.value })} /></label>
-  const matches = data.wines.filter((wine) => value.name.trim() && wine.name.toLowerCase() === value.name.trim().toLowerCase() && (wine.wineryId ?? '') === value.winery_id && (wine.vintage?.toString() ?? '') === (value.non_vintage === 'true' ? '' : value.vintage) && wine.nonVintage === (value.non_vintage === 'true'))
-  return <div className="new-wine-fields"><label>Wine name<input name={`${prefix}_name`} required={required} value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} /></label><label>Winery<select name={`${prefix}_winery_id`} value={value.winery_id} onChange={(event) => onChange({ ...value, winery_id: event.target.value })}><option value="">Not specified</option>{data.wineries.map((winery) => <option value={winery.id} key={winery.id}>{winery.name}</option>)}</select></label><div className="field-grid"><label>Vintage<input name={`${prefix}_vintage`} type="number" min="1800" max="2200" disabled={value.non_vintage === 'true'} value={value.vintage} onChange={(event) => onChange({ ...value, vintage: event.target.value })} /></label><label className="check-field"><input name={`${prefix}_non_vintage`} type="checkbox" checked={value.non_vintage === 'true'} onChange={(event) => onChange({ ...value, non_vintage: String(event.target.checked) })} /> Non-vintage</label></div>{matches.length > 0 && <p className="workflow-context">This wine is already in the collection. We’ll add bottles to it without changing its wine information.</p>}<details className="more-details"><summary>More wine information</summary><div className="details-fields"><div className="field-grid">{field('style','Style')}{field('category','Type')}{field('sweetness','Sweetness')}{field('country','Country')}<label>State<select name={`${prefix}_state`} value={value.state ?? ''} onChange={(event) => onChange({ ...value, state: event.target.value })}><option value="">Not specified</option>{US_STATES.map(([code]) => <option key={code}>{code}</option>)}</select></label><label>Closure<select name={`${prefix}_closure`} value={value.closure ?? 'Cork'} onChange={(event) => onChange({ ...value, closure: event.target.value })}><option>Cork</option><option>Screwtop</option></select></label></div>{field('vineyard','Vineyard')}{field('blend_description','Varietal or blend')}{[['official_winery_notes','Official winery notes'],['personal_notes','Our notes']].map(([name,label]) => <label key={name}>{label}<textarea name={`${prefix}_${name}`} value={value[name] ?? ''} onChange={(event) => onChange({ ...value, [name]: event.target.value })} /></label>)}</div></details></div>
+import {useRef,useState,type FormEvent} from 'react'
+import type {CellarData} from './lib/cellar-data'
+import {supabase} from './lib/supabase'
+import {createUniqueId} from './lib/unique-id'
+import {type NoticeTone} from './lib/interaction'
+import {markFormSaved} from './lib/unsaved-changes'
+import {userError,validatePhoto} from './lib/user-error'
+import {createPhotoUpload} from './lib/photo-upload'
+import {ModalLayer} from './OverlayLayer'
+import {PhotoPicker} from './PhotoPicker'
+import {inferEntryContext,type EntryContext} from './lib/entry-context'
+import type {EntryCompletion,EntryResult} from './lib/entry-types'
+import {acquisitionItems,blankWine,numeric,type AcquisitionLine} from './lib/acquisition-items'
+import {displayDate} from './lib/presentation'
+export {acquisitionItems} from './lib/acquisition-items'
+export type {WineDraft,AcquisitionLine} from './lib/acquisition-items'
+type Match={sources?:{source_name:string;source_url:string}[];id:string;status:string;confidence:string;match_type:string;match_explanation:string;proposed_data:Record<string,unknown>}
+type Line=AcquisitionLine&{match?:Match;accepted?:boolean;looking?:boolean;lookupError?:string}
+const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
+export function AcquisitionModal({action,householdId,data,initialWineryId,initialVisitId,initialDate,initialTripId,initialPurchaseId,initialLocationId,onClose,onSaved,onNotice,onComplete}: {
+ action:'add-wine'|'record-purchase';householdId:string;data:CellarData;initialWineryId?:string|null;initialVisitId?:string|null;initialDate?:string|null;initialTripId?:string|null;initialPurchaseId?:string|null;initialLocationId?:string|null;
+ onClose:()=>void;onSaved:()=>Promise<void>;onNotice:(message:string,tone?:NoticeTone)=>void;onComplete?:(completion:EntryCompletion)=>void
+}){
+ const existingPurchase=data.purchases.find(p=>p.id===initialPurchaseId)
+ const [winery,setWinery]=useState(initialWineryId??'')
+ const [winerySearch,setWinerySearch]=useState(data.wineries.find(w=>w.id===initialWineryId)?.name??'')
+ const [newWinery,setNewWinery]=useState<{name:string;city:string}|null>(null)
+ const [choosingWinery,setChoosingWinery]=useState(!initialWineryId)
+ const [date,setDate]=useState(existingPurchase?(existingPurchase.acquisitionDate??''):(initialDate??today()))
+ const [visitChoice,setVisitChoice]=useState<string|undefined>(initialVisitId??undefined)
+ const [tripChoice,setTripChoice]=useState<string|undefined>(initialTripId??undefined)
+ const [createVisit,setCreateVisit]=useState(false)
+ const [purchasePlace,setPurchasePlace]=useState<string|undefined>(existingPurchase?.purchaseLocation??undefined)
+ const [kind,setKind]=useState(existingPurchase?.acquisitionType??'purchased')
+ const [definitionOnly,setDefinitionOnly]=useState(false)
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[uncertain,setUncertain]=useState(false)
+ const selectedWinery=data.wineries.find(w=>w.id===winery)
+ const wineryName=selectedWinery?.name??newWinery?.name??winerySearch
+ const rack=initialLocationId??data.locations.find(l=>l.isActive&&l.name.toLowerCase()==='rack')?.id??data.locations.find(l=>l.isActive)?.id??''
+ const makeLine=():Line=>({id:createUniqueId(),wineId:'',draft:blankWine(winery),quantity:'1',location:rack,price:'',currentValue:''})
+ const [lines,setLines]=useState<Line[]>(()=>[makeLine()])
+ const update=(id:string,patch:Partial<Line>)=>setLines(items=>items.map(l=>l.id===id?{...l,...patch}:l))
+ const attachment=useRef<File|null>(null)
+ const requestId=useRef(createUniqueId()),payload=useRef<Record<string,unknown>|null>(null),flight=useRef(false),saved=useRef(false)
+ const context=inferEntryContext(data,winery,date,visitChoice,tripChoice)
+ const looking=lines.some(l=>l.looking)
+ const selectWinery=(id:string,name:string,pending=false)=>{setWinery(id);setWinerySearch(name);setNewWinery(pending?{name,city:''}:null);setChoosingWinery(false);setVisitChoice(undefined);setTripChoice(undefined);setCreateVisit(false);setLines(items=>items.map(l=>({...l,wineId:'',draft:{...l.draft!,winery_id:id},match:undefined,accepted:false}))) }
+ const findInfo=async(item:Line)=>{
+  if(!supabase||!item.draft?.name.trim()||!wineryName.trim()||item.looking)return
+  update(item.id,{looking:true,lookupError:'',match:undefined,accepted:false})
+  try{
+   const response=await supabase.functions.invoke('enrich-record',{body:{action:'preview_wine',householdId,draft:{name:item.draft.name.trim(),winery_name:wineryName.trim(),vintage:item.draft.non_vintage==='true'?null:numeric(item.draft.vintage),non_vintage:item.draft.non_vintage==='true'}}})
+   if(response.error)throw response.error
+   if(!response.data?.attempt)throw new Error(response.data?.error??'No wine information returned.')
+   update(item.id,{match:{...response.data.attempt,sources:response.data.sources}})
+  }catch(error){update(item.id,{lookupError:userError(error,'Wine information could not be found. You can still save this wine.')})}finally{update(item.id,{looking:false})}
+ }
+ const submit=async(event:FormEvent<HTMLFormElement>)=>{
+  event.preventDefault();if(!supabase||flight.current||saved.current||looking)return
+  const form=event.currentTarget,fd=new FormData(form)
+  flight.current=true;setBusy(true);setMessage('')
+  let photo=(form.elements.namedItem('photo') as HTMLInputElement|null)?.files?.[0]??null
+  try{
+   if(uncertain)photo=attachment.current
+   else attachment.current=photo
+   if(photo)validatePhoto(photo)
+   if(!payload.current||!uncertain){
+    if(!winery&&!newWinery)throw new Error('Choose a winery or add it here.')
+    if(!definitionOnly&&!initialPurchaseId&&(context.ambiguousTrip||context.ambiguousVisit))throw new Error('Choose the matching Trip or Visit, or leave it unlinked.')
+    const items=definitionOnly?lines.map(l=>({wine_id:l.wineId||null,new_wine:l.draft})):acquisitionItems(lines,kind==='gift')
+    const sums=lines.map(l=>numeric(l.price)===null?null:Number(l.quantity)*Number(l.price)),subtotal=kind==='gift'||sums.some(v=>v===null)?null:sums.reduce<number>((n,v)=>n+(v??0),0)
+    const tax=numeric(String(fd.get('tax')??'')),discount=numeric(String(fd.get('discount')??''))
+    payload.current={p_household_id:householdId,p_request_id:requestId.current,p_definition_only:definitionOnly,p_lines:items.map((l,i)=>({...l,enrichment_attempt_id:lines[i].accepted?lines[i].match?.id:null})),p_details:{winery_id:winery||null,new_winery:newWinery,purchase_id:initialPurchaseId??null,acquisition_type:kind,acquisition_date:date||null,visit_id:context.visitId||null,trip_id:context.tripId||null,visit_mode:!definitionOnly&&visitChoice===undefined?'auto':'manual',trip_mode:!definitionOnly&&tripChoice===undefined?'auto':'manual',create_visit:!definitionOnly&&createVisit,purchase_location:kind==='gift'?null:String(fd.get('purchase_location')??wineryName),gift_from:kind==='gift'?String(fd.get('gift_from')??''):null,subtotal,tax,discount,total_cost:kind==='gift'?null:numeric(String(fd.get('total_cost')??''))??(subtotal===null?null:subtotal+(tax??0)-(discount??0)),notes:String(fd.get('notes')??''),purchased_by_person_id:fd.get('purchased_by_person_id')||null,selected_by_person_id:fd.get('selected_by_person_id')||null}}
+   }
+   const response=await supabase.rpc('save_wine_entry',payload.current!)
+   if(response.error){setUncertain(!response.error.code||/fetch|network|timeout|connection/i.test(response.error.message));throw response.error}
+   saved.current=true;markFormSaved(form)
+   const result=response.data as EntryResult
+   let retryPhoto:(()=>Promise<void>)|undefined
+   if(photo){const upload=createPhotoUpload(supabase,photo,householdId,'wines',{wine_id:result.wine_ids[0]});try{await upload()}catch{retryPhoto=upload}}
+   let refreshFailed=false
+   try{await onSaved()}catch{refreshFailed=true}
+   markFormSaved(form)
+   const next:EntryContext={wineryId:result.winery_id,visitId:result.visit_id,tripId:result.trip_id,date,purchaseId:result.purchase_id,locationId:lines[0].location,purchaseLocation:wineryName}
+   // Completion is explicit; it does not depend on Back passing a busy-form guard.
+   if(onComplete)onComplete({result,context:next,retryPhoto,refreshFailed})
+   else {setBusy(false);queueMicrotask(onClose)}
+   onNotice(refreshFailed?`Saved, but the screen could not refresh.${retryPhoto?' Record saved; photo not added.':''}`:retryPhoto?'Record saved; photo not added.':definitionOnly?'Wine saved without bottles.':'Wine and bottles added to our Cellar.',refreshFailed||retryPhoto?'warning':'success')
+  }catch(error){setMessage(userError(error,'The save could not be confirmed. Retry Save safely retries the same acquisition.'))}finally{flight.current=false;setBusy(false)}
+ }
+ return <ModalLayer layer="action" dismissible={!busy&&!looking} onDismiss={onClose} surfaceClassName="workflow-modal workflow-form-modal wine-entry-modal" ariaLabelledBy="entry-title">
+  <div className="sheet-header detail-header"><div><p className="eyebrow burgundy">OUR CELLAR</p><h2 id="entry-title">{initialPurchaseId?'Add Another Wine':action==='record-purchase'?'Add Wines & Bottles':'Add Wine'}</h2></div><button className="icon-close" aria-label="Close" disabled={busy||looking} onClick={onClose}>×</button></div>
+  <form className="workflow-form wine-entry-form" aria-busy={busy||looking} onSubmit={submit}>
+   <fieldset className="workflow-fields" disabled={busy||uncertain||saved.current||looking}>
+    <section className="entry-section">
+     <label>Winery<input name="winery_search" type="search" autoComplete="off" value={winerySearch} disabled={looking} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
+     {choosingWinery&&<div className="entry-suggestions" role="group" aria-label="Matching wineries">{data.wineries.filter(w=>w.name.toLowerCase().includes(winerySearch.trim().toLowerCase())).slice(0,8).map(w=><button key={w.id} type="button" onClick={()=>selectWinery(w.id,w.name)}>{w.name}{w.city?` · ${w.city}`:''}</button>)}{winerySearch.trim()&&!data.wineries.some(w=>w.name.toLowerCase()===winerySearch.trim().toLowerCase())&&<button type="button" onClick={()=>selectWinery('',winerySearch.trim(),true)}>+ Add “{winerySearch.trim()}”</button>}</div>}
+     {newWinery&&<><p className="entry-context">✓ {newWinery.name} will be added with this wine.</p><label>Winery location (optional)<input name="winery_city" placeholder="City or region" value={newWinery.city} onChange={e=>setNewWinery({...newWinery,city:e.target.value})}/></label></>}
+    </section>
+    {lines.map((item,index)=>{const draft=item.draft!,existing=data.wines.filter(w=>w.wineryId===winery&&draft.name.trim()&&w.name.toLowerCase().includes(draft.name.trim().toLowerCase())).slice(0,5);return <section className="entry-section" key={item.id}>
+     {lines.length>1&&<div className="sheet-header"><h3>Wine {index+1}</h3><button type="button" className="text-button" onClick={()=>{if(!draft.name.trim()||window.confirm("Remove this wine from the entry?"))setLines(ls=>ls.filter(l=>l.id!==item.id))}}>Remove wine</button></div>}
+     <label>Wine name<input name={`wine_${item.id}`} autoComplete="off" required value={draft.name} disabled={looking} onChange={e=>update(item.id,{wineId:'',draft:{...draft,name:e.target.value},match:undefined,accepted:false})}/></label>
+     {!item.wineId&&existing.length>0&&<div className="entry-suggestions" role="group" aria-label="Existing wines">{existing.map(w=><button type="button" key={w.id} onClick={()=>update(item.id,{wineId:w.id,draft:{...blankWine(winery),name:w.name,vintage:w.vintage?.toString()??'',non_vintage:String(w.nonVintage)},match:undefined,accepted:false})}>Use {w.name} · {w.nonVintage?'NV':w.vintage??'Vintage unknown'}</button>)}</div>}
+     <div className="field-grid"><label>Vintage<input name={`vintage_${item.id}`} type="number" inputMode="numeric" min="1800" max="2200" disabled={looking||draft.non_vintage==='true'} value={draft.vintage} onChange={e=>update(item.id,{wineId:'',draft:{...draft,vintage:e.target.value},match:undefined,accepted:false})}/></label><label className="check-field"><input name={`nv_${item.id}`} type="checkbox" disabled={looking} checked={draft.non_vintage==='true'} onChange={e=>update(item.id,{wineId:'',draft:{...draft,non_vintage:String(e.target.checked)},match:undefined,accepted:false})}/> Non-vintage</label></div>
+     {item.wineId&&<p className="entry-context">✓ Adding bottles to this existing wine.</p>}
+     <button type="button" className="secondary-button full-button" disabled={looking||!draft.name.trim()||(!winery&&!newWinery)} onClick={()=>void findInfo(item)}>{item.looking?'Finding wine information…':'Find Wine Info'}</button>
+     {item.lookupError&&<p role="alert">{item.lookupError}</p>}
+     {item.match&&<div className="entry-match"><strong>{item.match.status==='no_match'?'No reliable match found':item.accepted?'✓ Information selected':`${item.match.match_type==='exact'?'Exact match':'Review this match'} · ${item.match.confidence} confidence`}</strong><p>{item.match.match_explanation}</p>{item.match.status!=='no_match'&&<><dl>{['official_name','producer','vintage','category','style','grapes','region'].filter(k=>item.match!.proposed_data[k]!=null).map(k=><div key={k}><dt>{k.replaceAll('_',' ')}</dt><dd>{String(item.match!.proposed_data[k])}</dd></div>)}</dl><details><summary>More sourced information</summary>{Object.entries(item.match.proposed_data).map(([k,v])=><p key={k}><strong>{k.replaceAll('_',' ')}:</strong> {Array.isArray(v)?v.join(', '):String(v)}</p>)}</details>{item.match.sources?.map(source=><a key={source.source_url} href={source.source_url} target="_blank" rel="noreferrer">{source.source_name} ↗</a>)}{!item.accepted&&<button type="button" className="primary-button" onClick={()=>update(item.id,{accepted:true})}>Use This Info</button>}<small>Saved as sourced information. Our personal fields stay separate.</small></>}</div>}
+     {!definitionOnly&&<div className="field-grid"><label>Quantity<input name={`quantity_${item.id}`} type="number" inputMode="numeric" min="1" step="1" required value={item.quantity} onChange={e=>update(item.id,{quantity:e.target.value})}/></label><label>Price per bottle (optional)<input name={`price_${item.id}`} type="number" inputMode="decimal" min="0" step="0.01" disabled={kind==='gift'} value={item.price} onChange={e=>update(item.id,{price:e.target.value})}/></label></div>}
+     {!item.wineId&&<details><summary>Our notes / other wine details</summary><label>Our notes<textarea name={`personal_${item.id}`} value={draft.personal_notes??''} onChange={e=>update(item.id,{draft:{...draft,personal_notes:e.target.value}})}/></label><div className="field-grid">{[['style','Style'],['category','Type'],['closure','Closure']].map(([key,label])=><label key={key}>{label}<input name={`${key}_${item.id}`} value={draft[key]??''} onChange={e=>update(item.id,{draft:{...draft,[key]:e.target.value}})}/></label>)}</div></details>}
+    </section>})}
+    {!definitionOnly&&<section className="entry-section">
+     {initialPurchaseId?<p className="entry-context">Adding to the same purchase{date?` · ${displayDate(date)}`:''}. Its Visit and Trip stay linked.</p>:<><div className="field-grid"><label>Acquisition<select name="kind" value={kind} onChange={e=>setKind(e.target.value as 'purchased'|'gift')}><option value="purchased">Purchased</option><option value="gift">Received as a gift</option></select></label><label>Purchase date<input name="date" type="date" required={kind==='purchased'} value={date} onChange={e=>{setDate(e.target.value);setVisitChoice(undefined);setTripChoice(undefined);setCreateVisit(false)}}/></label></div>
+     <div className="entry-context"><p>Trip: {data.trips.find(t=>t.id===context.tripId)?.name??(context.ambiguousTrip?'Choose a matching trip':'Not linked')}{context.tripId?' ✓':''}</p><p>Visit: {context.visitId?`${wineryName} · ${displayDate(data.visits.find(v=>v.id===context.visitId)?.visitDate??date)} ✓`:context.ambiguousVisit?'Choose a matching visit':'No matching visit'}</p></div>
+     {(context.ambiguousTrip||context.ambiguousVisit)&&<p role="alert">More than one match. Choose below or leave it unlinked.</p>}
+     <details open={context.ambiguousTrip||context.ambiguousVisit||undefined}><summary>Change Trip / Visit</summary><label>Visit<select name="visit" value={visitChoice??(context.ambiguousVisit?'choose':context.visitId)} onChange={e=>{setVisitChoice(e.target.value);setTripChoice(undefined);setCreateVisit(false)}}><option value="choose" disabled>Choose a visit</option><option value="">No linked visit</option>{data.visits.filter(v=>v.wineryId===winery).map(v=><option key={v.id} value={v.id}>{wineryName} · {displayDate(v.visitDate)}</option>)}</select></label><label>Trip<select name="trip" value={tripChoice??(context.ambiguousTrip?'choose':context.tripId)} onChange={e=>setTripChoice(e.target.value)}><option value="choose" disabled>Choose a trip</option><option value="">No linked trip</option>{data.trips.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>{context.conflict&&<small>This purchase’s Trip differs from the Visit’s Trip.</small>}</details>
+     {!context.visitId&&!context.ambiguousVisit&&(winery||newWinery)&&date&&<label className="check-field"><input type="checkbox" name="create_visit" checked={createVisit} onChange={e=>setCreateVisit(e.target.checked)}/> Create Visit for this date</label>}
+     </>}
+     {lines.map((item,index)=><label key={item.id}>{lines.length>1?`Storage for wine ${index+1}`:'Storage'}<select name={`location_${item.id}`} required value={item.location} onChange={e=>update(item.id,{location:e.target.value})}><option value="">Choose storage</option>{data.locations.filter(l=>l.isActive).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>)}
+     <button type="button" className="secondary-button" disabled={looking} onClick={()=>setLines(ls=>[...ls,{...makeLine(),location:ls[0]?.location??rack}])}>Add another wine before saving</button>
+     <details><summary>More acquisition details / photo</summary>{!initialPurchaseId&&<><fieldset className="workflow-fields" hidden={kind==='gift'} disabled={kind==='gift'}><label>Purchased at<input name="purchase_location" value={purchasePlace??wineryName} onChange={e=>setPurchasePlace(e.target.value)}/></label></fieldset><fieldset className="workflow-fields" hidden={kind!=='gift'} disabled={kind!=='gift'}><label>Gift from<input name="gift_from"/></label></fieldset><div className="field-grid">{[['tax','Tax'],['discount','Discount'],['total_cost','Final total']].map(([key,label])=><label key={key}>{label}<input name={key} type="number" inputMode="decimal" min="0" step="0.01"/></label>)}</div>{[['purchased_by_person_id','Purchased by'],['selected_by_person_id','Selected by']].map(([key,label])=><label key={key}>{label}<select name={key}><option value="">Not specified</option>{data.people.map(p=><option key={p.id} value={p.id}>{p.displayName}</option>)}</select></label>)}<label>Purchase notes<textarea name="notes"/></label></>}<PhotoPicker name="photo" label="Photo of the first wine (optional)"/></details>
+    </section>}
+    {!initialPurchaseId&&lines.length===1&&<details><summary>Wine without bottles</summary><label className="check-field"><input name="definition_only" type="checkbox" checked={definitionOnly} onChange={e=>setDefinitionOnly(e.target.checked)}/> Save wine without adding bottles</label></details>}
+   </fieldset>
+   {message&&<p role="alert" className="form-message error">{message}</p>}{uncertain&&<p>The connection was interrupted. Retry Save checks the same acquisition without adding bottles twice.</p>}
+   <div className="form-actions entry-save"><button type="button" data-discard className="secondary-button" disabled={busy||looking} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||looking||saved.current}>{busy?'Saving…':uncertain?'Retry Save':'Save'}</button></div>
+  </form>
+ </ModalLayer>
 }

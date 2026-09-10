@@ -712,3 +712,23 @@ button:not(:disabled):active { transform: translateY(1px); }
 @media(max-width:600px) { .search-actions label { margin-left:0; width:100%; } .home-screen .hero { padding:18px; } .contact-actions a { width:100%; } .enrichment-actions { gap:8px; flex-wrap:wrap; } .photo-actions { flex-wrap:wrap; } }
 
 .photo-recovery { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(90vw, 480px); z-index: 10000; box-shadow: 0 4px 24px #24151c33; }
+
+/* Pass 4: one acquisition form; the existing shell and detail pages stay intact. */
+.wine-entry-modal { max-width: 640px; }
+.wine-entry-form { gap: 16px; }
+.entry-section { display:grid; gap:14px; padding:16px 0; border-bottom:1px solid var(--line); }
+.entry-suggestions { display:grid; gap:6px; max-height:240px; overflow:auto; }
+.entry-suggestions button { min-height:44px; padding:10px 12px; background:#fffaf0; color:var(--burgundy); border:1px solid #ded2bc; border-radius:8px; text-align:left; font:inherit; }
+.entry-context { background:#eee5d3; padding:10px 12px; border-radius:8px; font-size:14px; }
+.entry-context p { margin:4px 0; }
+.entry-match { display:grid; gap:10px; padding:14px; border:1px solid #cbb996; border-radius:10px; }
+.entry-match dl { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0; }
+.entry-match dt { text-transform:capitalize; font-size:13px; color:#75604b; }
+.entry-match dd { margin:0; }
+.entry-match small { font-size:13px; }
+.entry-save { position:sticky; bottom:0; z-index:4; background:#faf4e6; padding:12px 0; border-top:1px solid #d9cdb6; }
+.entry-receipt { position:fixed; z-index:85; bottom:calc(80px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); width:min(94vw,540px); display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px; border:1px solid #c7af83; border-radius:12px; background:#faf4e6; box-shadow:0 4px 24px #24151c33; }
+.entry-receipt button { min-height:44px; min-width:44px; border:0; border-radius:8px; background:var(--burgundy); color:white; padding:8px 12px; font:inherit; }
+.wine-entry-form input,.wine-entry-form select,.wine-entry-form textarea { min-height:44px; font-size:16px; }
+.wine-entry-form summary { min-height:44px; padding:12px 0; font-size:14px; }
+@media(max-width:600px){ .wine-entry-modal { padding:14px; } .wine-entry-form .field-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } .wine-entry-form .check-field { align-self:center; } .wine-entry-form input,.wine-entry-form select { min-width:0; width:100%; } .wine-entry-form input[type=checkbox] { min-height:24px; width:24px; } }

@@ -1,3 +1,4 @@
+import type { EntryCompletion } from './lib/entry-types'
 import { AcquisitionModal } from './AcquisitionModal'
 import { preferredLot, lotDescription } from './lib/bottle-selection'
 import { FormEvent, useRef, useState } from 'react'
@@ -42,6 +43,9 @@ export function WorkflowModal({
   initialVisitId = null,
   initialDate = null,
   initialTripId = null,
+  initialPurchaseId,
+  initialLocationId,
+  onComplete,
   onClose,
   onSaved,
   onNotice,
@@ -54,6 +58,9 @@ export function WorkflowModal({
   initialVisitId?: string | null
   initialDate?: string | null
   initialTripId?: string | null
+  initialPurchaseId?: string | null
+  initialLocationId?: string | null
+  onComplete?: (completion: EntryCompletion) => void
   onClose: () => void
   onSaved: () => Promise<void>
   onNotice: (message: string, tone?: 'success' | 'warning') => void
@@ -209,7 +216,7 @@ export function WorkflowModal({
     }
   }
 
-  if (action === 'add-wine' || action === 'record-purchase') return <AcquisitionModal action={action} householdId={householdId} data={data} initialWineryId={initialWineryId} initialVisitId={initialVisitId} initialDate={initialDate} initialTripId={initialTripId} onClose={onClose} onSaved={onSaved} onNotice={onNotice} />
+  if (action === 'add-wine' || action === 'record-purchase') return <AcquisitionModal initialPurchaseId={initialPurchaseId} initialLocationId={initialLocationId} onComplete={onComplete} action={action} householdId={householdId} data={data} initialWineryId={initialWineryId} initialVisitId={initialVisitId} initialDate={initialDate} initialTripId={initialTripId} onClose={onClose} onSaved={onSaved} onNotice={onNotice} />
 
   return (
     <ModalLayer layer="action" onDismiss={onClose} dismissible={!busy} surfaceClassName="workflow-modal workflow-form-modal" ariaLabelledBy="workflow-title">
