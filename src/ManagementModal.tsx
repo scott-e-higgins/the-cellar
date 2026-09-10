@@ -1,3 +1,4 @@
+import { InventoryAudit } from './InventoryAudit'
 import { TripReconciliation } from './TripReconciliation'
 import type { EntryContext } from './lib/entry-context'
 import { HistoryCorrection } from './HistoryCorrection'
@@ -29,7 +30,7 @@ export type ManagementTarget =
   | { kind: 'purchase'; record: PurchaseRecord; initialTab?: DetailTab; autoAddPhoto?: boolean }
   | { kind: 'gift'; record: GiftRecord; initialTab?: DetailTab; autoAddPhoto?: boolean }
   | { kind: 'visit'; record: VisitRecord; initialTab?: DetailTab; autoAddPhoto?: boolean }
-  | { kind: 'history' | 'favorites' | 'statistics' | 'storage' | 'documents' | 'trips' | 'enrichment' | 'settings' }
+  | { kind: 'history' | 'favorites' | 'statistics' | 'storage' | 'inventory-audit' | 'documents' | 'trips' | 'enrichment' | 'settings' }
 
 type DetailTab = 'details' | 'history' | 'photos'
 
@@ -46,7 +47,7 @@ function targetTitle(target: ManagementTarget, data: CellarData) {
   if (target.kind === 'purchase') return target.record.purchaseLocation ?? 'Purchase'
   if (target.kind === 'gift') return `Gift to ${target.record.giftedTo}`
   if (target.kind === 'visit') return data.wineries.find((winery) => winery.id === target.record.wineryId)?.name ?? 'Winery visit'
-  return ({ history: 'History', favorites: 'Favorites', statistics: 'Statistics', storage: 'Storage', documents: 'Documents & Receipts', trips: 'Trip Links', enrichment: 'Data Enrichment', settings: 'Settings' } as Record<string, string>)[target.kind]
+  return ({ history: 'History', favorites: 'Favorites', statistics: 'Statistics', storage: 'Storage', 'inventory-audit': 'Inventory Audit', documents: 'Documents & Receipts', trips: 'Trip Links', enrichment: 'Data Enrichment', settings: 'Settings' } as Record<string, string>)[target.kind]
 }
 
 function photosFor(target: ManagementTarget, data: CellarData) {
@@ -136,6 +137,7 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
       {target.kind === 'storage' && <Storage data={data} householdId={householdId} editable={editable} onSaved={onSaved} onNotice={onNotice} />}
       {target.kind === 'documents' && <Documents householdId={householdId} data={data} editable={editable} onSaved={onSaved} onNotice={onNotice} onNavigate={navigateFromCurrent} />}
       {target.kind === 'enrichment' && <EnrichmentDashboard householdId={householdId} data={data} editable={editable} onSaved={onSaved} kind={enrichmentKind} setKind={setEnrichmentKind} filter={enrichmentFilter} setFilter={setEnrichmentFilter} onNavigate={(kind, id) => { enrichmentScroll.current = modalRef.current?.scrollTop ?? 0; if (kind === 'wine') { const wine = data.wines.find((item) => item.id === id); if (wine) navigateFromCurrent({ kind: 'wine', record: wine }) } else { const winery = data.wineries.find((item) => item.id === id); if (winery) navigateFromCurrent({ kind: 'winery', record: winery }) } }} />}
+      {target.kind === 'inventory-audit' && <InventoryAudit onBusy={setBusy} householdId={householdId} data={data} photoUrls={photoUrls} editable={editable} onSaved={onSaved} onNotice={onNotice} />}
       {target.kind === 'trips' && <TripReconciliation householdId={householdId} data={data} editable={editable} onSaved={onSaved} onNotice={onNotice} />}
       {target.kind === 'settings' && <Empty title="Private household collection" text="Authentication, member roles, private photos and documents, installable PWA behavior, and import guardrails are active." />}
       {message && <p className={/saved|uploaded|updated|deleted|accepted/i.test(message) ? 'form-message success' : 'form-message error'} role="status">{message}</p>}
@@ -376,6 +378,11 @@ function History({ target, data, onNavigate }: { target: ManagementTarget; data:
   if (!['purchase', 'gift', 'visit', 'winery'].includes(target.kind)) for (const opening of data.openings.filter((entry) => (!wine || entry.wineId === wine.id) && (!openingOnly || entry.id === openingOnly))) { const itemWine = data.wines.find((entry) => entry.id === opening.wineId); events.push({ key: `opening-${opening.id}`, at: opening.openedAt, title: `${opening.status === 'open' ? 'Bottle opened' : 'Bottle enjoyed'}${itemWine && !wine ? ` · ${itemWine.name}` : ''}`, body: [opening.openedBy, opening.occasion, opening.memoryNotes].filter(Boolean).join(' · '), target: { kind: 'opening', record: opening } }) }
   if (!['purchase', 'opening', 'visit', 'winery'].includes(target.kind)) for (const gift of data.giftsGiven.filter((entry) => (!wine || entry.wineId === wine.id) && (!giftOnly || entry.id === giftOnly))) { const itemWine = data.wines.find((entry) => entry.id === gift.wineId); events.push({ key: `gift-${gift.id}`, at: gift.giftedOn, title: `1 bottle gifted to ${gift.giftedTo}${itemWine && !wine ? ` · ${itemWine.name}` : ''}`, body: gift.occasionNote ?? '', target: { kind: 'gift', record: gift } }) }
   if (!['purchase', 'opening', 'gift', 'wine'].includes(target.kind)) for (const visit of data.visits.filter((entry) => (!winery || entry.wineryId === winery.id) && (!visitOnly || entry.id === visitOnly))) { const itemWinery = data.wineries.find((entry) => entry.id === visit.wineryId); events.push({ key: `visit-${visit.id}`, at: visit.visitDate, title: `Winery visit${itemWinery && !winery ? ` · ${itemWinery.name}` : ''}`, body: visit.notes ?? '', target: { kind: 'visit', record: visit } }) }
+  if (target.kind === 'history' || target.kind === 'wine') for (const movement of data.movements.filter(m=>m.inventoryAuditId)) {
+    const item = data.purchaseItems.find(i=>i.id===movement.purchaseItemId), itemWine=data.wines.find(w=>w.id===item?.wineId)
+    if (wine && itemWine?.id!==wine.id) continue
+    events.push({key:`audit-${movement.id}`,at:movement.occurredAt,title:`Inventory Audit · ${movement.movementType==='move'?'Moved':movement.movementType==='adjust_in'?'+':'−'} ${movement.quantity} bottle${movement.quantity===1?'':'s'}${itemWine?` · ${itemWine.name}`:''}`,body:[movement.fromLocationName,movement.toLocationName,movement.reason].filter(Boolean).join(' · '),target:{kind:'inventory-audit'}})
+  }
   events.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
   return <div className="history-list">{events.length ? events.map((event) => <button className="history-card" key={event.key} onClick={() => onNavigate(event.target)}><small>{event.at ? date(event.at) : 'Date unknown'}</small><strong>{event.title}</strong>{event.body && <p>{event.body}</p>}<span aria-hidden="true">›</span></button>) : <p className="empty-copy">No history yet.</p>}</div>
 }
