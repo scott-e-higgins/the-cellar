@@ -1,5 +1,5 @@
 import type {CellarData} from './cellar-data'
-export type EntryContext={wineryId?:string|null;visitId?:string|null;tripId?:string|null;date?:string|null;purchaseId?:string|null;locationId?:string|null;purchaseLocation?:string|null}
+export type EntryContext={departureType?:'opened'|'gifted';wineryId?:string|null;visitId?:string|null;tripId?:string|null;date?:string|null;purchaseId?:string|null;locationId?:string|null;purchaseLocation?:string|null}
 export function inferEntryContext(data:CellarData,wineryId:string,date:string,visitChoice:string|undefined,tripChoice:string|undefined){
  const visits=data.visits.filter(v=>v.wineryId===wineryId&&v.visitDate===date)
  const visitId=visitChoice!==undefined?visitChoice:visits.length===1?visits[0].id:''
