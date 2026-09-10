@@ -1,3 +1,4 @@
+import { MoveBottleModal } from './MoveBottleModal'
 import type { EntryCompletion } from './lib/entry-types'
 import { AcquisitionModal } from './AcquisitionModal'
 import { preferredLot, lotDescription } from './lib/bottle-selection'
@@ -18,6 +19,7 @@ import { PhotoPicker } from './PhotoPicker'
 const LABELS: Record<QuickAction, string> = {
   'add-wine': 'Add Wine',
   'record-purchase': 'Add Bottles',
+  'move-bottles': 'Change Location',
   'open-bottle': 'Open / Gift Bottle',
   'add-winery': 'Add Winery',
   'add-winery-visit': 'Add Winery Visit',
@@ -218,6 +220,7 @@ export function WorkflowModal({
     }
   }
 
+  if (action === 'move-bottles') return <MoveBottleModal wineId={initialWineId ?? ''} householdId={householdId} data={data} onClose={onClose} onSaved={onSaved} onNotice={onNotice} />
   if (action === 'add-wine' || action === 'record-purchase') return <AcquisitionModal initialPurchaseId={initialPurchaseId} initialLocationId={initialLocationId} onComplete={onComplete} action={action} householdId={householdId} data={data} initialWineryId={initialWineryId} initialVisitId={initialVisitId} initialDate={initialDate} initialTripId={initialTripId} onClose={onClose} onSaved={onSaved} onNotice={onNotice} />
 
   return (

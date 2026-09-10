@@ -4,6 +4,7 @@ export type QuickAction =
   | 'add-wine'
   | 'record-purchase'
   | 'open-bottle'
+  | 'move-bottles'
   | 'add-winery'
   | 'add-winery-visit'
 
