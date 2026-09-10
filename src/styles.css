@@ -732,3 +732,29 @@ button:not(:disabled):active { transform: translateY(1px); }
 .wine-entry-form input,.wine-entry-form select,.wine-entry-form textarea { min-height:44px; font-size:16px; }
 .wine-entry-form summary { min-height:44px; padding:12px 0; font-size:14px; }
 @media(max-width:600px){ .wine-entry-modal { padding:14px; } .wine-entry-form .field-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } .wine-entry-form .check-field { align-self:center; } .wine-entry-form input,.wine-entry-form select { min-width:0; width:100%; } .wine-entry-form input[type=checkbox] { min-height:24px; width:24px; } }
+
+/* Physical counting: large controls and short, contextual tasks. */
+.inventory-audit { padding: 0 18px 24px; display: grid; gap: 16px; }
+.inventory-audit label { display: grid; gap: 6px; font-size: 15px; }
+.inventory-audit input, .inventory-audit select { width: 100%; min-height: 48px; padding: 10px; font: inherit; font-size: 16px; border: 1px solid #cbbb9c; border-radius: 8px; background: #fffdf7; box-sizing: border-box; }
+.inventory-audit button { min-height: 48px; white-space: normal; }
+.inventory-audit p { margin: 6px 0; line-height: 1.5; }
+.audit-location, .audit-counter, .audit-exception { padding: 16px; border: 1px solid #dfd2bb; border-radius: 12px; background: #fffdf7; min-width: 0; }
+.audit-context { position: sticky; top: 78px; background: #f8f4e9; z-index: 2; padding: 8px 0; }
+.audit-context h3, .audit-location h3 { margin: 6px 0; }
+.audit-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.audit-hint { font-size: 14px; color: #665b4f; }
+.audit-stepper { display: grid; grid-template-columns: 56px minmax(80px,1fr) 56px; gap: 14px; align-items: end; margin: 16px 0; }
+.audit-stepper input { text-align: center; font-size: 24px; height: 56px; }
+.audit-stepper button { height: 56px; font-size: 28px; }
+.audit-wine-identity { display: flex; align-items: center; gap: 16px; }
+.audit-wine-identity img { width: 65px; height: 90px; object-fit: contain; border-radius: 8px; }
+.audit-wine-identity h3 { margin: 4px 0; }
+.audit-search { display: grid; grid-template-columns: minmax(0,1fr) 120px; gap: 10px; }
+.audit-result { display: grid; gap: 4px; width: 100%; padding: 12px; text-align: left; border: 0; border-bottom: 1px solid #dfd2bb; background: transparent; color: inherit; font: inherit; }
+.audit-result small { font-size: 14px; }
+.audit-confirm { width: 100%; margin-top: 14px; }
+.audit-counter details, .audit-missing { margin: 14px 0; }
+.audit-counter details label, .audit-missing label { margin-top: 10px; }
+.audit-cancel { justify-self: start; }
+@media (max-width: 400px) { .inventory-audit { padding-left: 10px; padding-right: 10px; } .audit-search { grid-template-columns: 1fr; } }

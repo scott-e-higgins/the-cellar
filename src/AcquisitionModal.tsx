@@ -17,8 +17,8 @@ export type {WineDraft,AcquisitionLine} from './lib/acquisition-items'
 type Match={sources?:{source_name:string;source_url:string}[];id:string;status:string;confidence:string;match_type:string;match_explanation:string;proposed_data:Record<string,unknown>}
 type Line=AcquisitionLine&{match?:Match;accepted?:boolean;looking?:boolean;lookupError?:string}
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
-export function AcquisitionModal({action,householdId,data,initialWineryId,initialVisitId,initialDate,initialTripId,initialPurchaseId,initialLocationId,onClose,onSaved,onNotice,onComplete}: {
- action:'add-wine'|'record-purchase';householdId:string;data:CellarData;initialWineryId?:string|null;initialVisitId?:string|null;initialDate?:string|null;initialTripId?:string|null;initialPurchaseId?:string|null;initialLocationId?:string|null;
+export function AcquisitionModal({auditMode=false,action,householdId,data,initialWineryId,initialVisitId,initialDate,initialTripId,initialPurchaseId,initialLocationId,onClose,onSaved,onNotice,onComplete}: {
+ auditMode?:boolean;action:'add-wine'|'record-purchase';householdId:string;data:CellarData;initialWineryId?:string|null;initialVisitId?:string|null;initialDate?:string|null;initialTripId?:string|null;initialPurchaseId?:string|null;initialLocationId?:string|null;
  onClose:()=>void;onSaved:()=>Promise<void>;onNotice:(message:string,tone?:NoticeTone)=>void;onComplete?:(completion:EntryCompletion)=>void
 }){
  const existingPurchase=data.purchases.find(p=>p.id===initialPurchaseId)
@@ -32,7 +32,7 @@ export function AcquisitionModal({action,householdId,data,initialWineryId,initia
  const [createVisit,setCreateVisit]=useState(false)
  const [purchasePlace,setPurchasePlace]=useState<string|undefined>(existingPurchase?.purchaseLocation??undefined)
  const [kind,setKind]=useState(existingPurchase?.acquisitionType??'purchased')
- const [definitionOnly,setDefinitionOnly]=useState(false)
+ const [definitionOnly,setDefinitionOnly]=useState(auditMode)
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[uncertain,setUncertain]=useState(false)
  const selectedWinery=data.wineries.find(w=>w.id===winery)
  const wineryName=selectedWinery?.name??newWinery?.name??winerySearch
@@ -92,6 +92,7 @@ export function AcquisitionModal({action,householdId,data,initialWineryId,initia
   <div className="sheet-header detail-header"><div><p className="eyebrow burgundy">OUR CELLAR</p><h2 id="entry-title">{initialPurchaseId?'Add Another Wine':action==='record-purchase'?'Add Wines & Bottles':'Add Wine'}</h2></div><button className="icon-close" aria-label="Close" disabled={busy||looking} onClick={onClose}>×</button></div>
   <form className="workflow-form wine-entry-form" aria-busy={busy||looking} onSubmit={submit}>
    <fieldset className="workflow-fields" disabled={busy||uncertain||saved.current||looking}>
+    {auditMode&&<p className="entry-context">Add the wine’s identity here. Return to the audit to count its bottles; inventory changes only when you Apply Audit.</p>}
     <section className="entry-section">
      <label>Winery<input name="winery_search" type="search" autoComplete="off" value={winerySearch} disabled={looking} onFocus={()=>setChoosingWinery(true)} onChange={e=>{setWinerySearch(e.target.value);setChoosingWinery(true);setWinery('');setNewWinery(null);setVisitChoice(undefined);setTripChoice(undefined);setLines(ls=>ls.map(l=>({...l,match:undefined,accepted:false,wineId:''})))}} placeholder="Search or add a winery"/></label>
      {choosingWinery&&<div className="entry-suggestions" role="group" aria-label="Matching wineries">{data.wineries.filter(w=>w.name.toLowerCase().includes(winerySearch.trim().toLowerCase())).slice(0,8).map(w=><button key={w.id} type="button" onClick={()=>selectWinery(w.id,w.name)}>{w.name}{w.city?` · ${w.city}`:''}</button>)}{winerySearch.trim()&&!data.wineries.some(w=>w.name.toLowerCase()===winerySearch.trim().toLowerCase())&&<button type="button" onClick={()=>selectWinery('',winerySearch.trim(),true)}>+ Add “{winerySearch.trim()}”</button>}</div>}
@@ -120,7 +121,7 @@ export function AcquisitionModal({action,householdId,data,initialWineryId,initia
      <button type="button" className="secondary-button" disabled={looking} onClick={()=>setLines(ls=>[...ls,{...makeLine(),location:ls[0]?.location??rack}])}>Add another wine before saving</button>
      <details><summary>More acquisition details / photo</summary>{!initialPurchaseId&&<><fieldset className="workflow-fields" hidden={kind==='gift'} disabled={kind==='gift'}><label>Purchased at<input name="purchase_location" value={purchasePlace??wineryName} onChange={e=>setPurchasePlace(e.target.value)}/></label></fieldset><fieldset className="workflow-fields" hidden={kind!=='gift'} disabled={kind!=='gift'}><label>Gift from<input name="gift_from"/></label></fieldset><div className="field-grid">{[['tax','Tax'],['discount','Discount'],['total_cost','Final total']].map(([key,label])=><label key={key}>{label}<input name={key} type="number" inputMode="decimal" min="0" step="0.01"/></label>)}</div>{[['purchased_by_person_id','Purchased by'],['selected_by_person_id','Selected by']].map(([key,label])=><label key={key}>{label}<select name={key}><option value="">Not specified</option>{data.people.map(p=><option key={p.id} value={p.id}>{p.displayName}</option>)}</select></label>)}<label>Purchase notes<textarea name="notes"/></label></>}<PhotoPicker name="photo" label="Photo of the first wine (optional)"/></details>
     </section>}
-    {!initialPurchaseId&&lines.length===1&&<details><summary>Wine without bottles</summary><label className="check-field"><input name="definition_only" type="checkbox" checked={definitionOnly} onChange={e=>setDefinitionOnly(e.target.checked)}/> Save wine without adding bottles</label></details>}
+    {!auditMode&&!initialPurchaseId&&lines.length===1&&<details><summary>Wine without bottles</summary><label className="check-field"><input name="definition_only" type="checkbox" checked={definitionOnly} onChange={e=>setDefinitionOnly(e.target.checked)}/> Save wine without adding bottles</label></details>}
    </fieldset>
    {message&&<p role="alert" className="form-message error">{message}</p>}{uncertain&&<p>The connection was interrupted. Retry Save checks the same acquisition without adding bottles twice.</p>}
    <div className="form-actions entry-save"><button type="button" data-discard className="secondary-button" disabled={busy||looking} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||looking||saved.current}>{busy?'Saving…':uncertain?'Retry Save':'Save'}</button></div>

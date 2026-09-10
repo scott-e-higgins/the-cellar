@@ -11,7 +11,7 @@ export function tripForVisit(data: CellarData, visitId: string): TripRecord | nu
 
 export function winesForVisit(data: CellarData, visitId: string): WineRecord[] {
   const purchaseIds = new Set(data.purchases.filter((purchase) => purchase.wineryVisitId === visitId).map((purchase) => purchase.id))
-  const wineIds = new Set(data.purchaseItems.filter((item) => purchaseIds.has(item.purchaseId)).map((item) => item.wineId))
+  const wineIds = new Set(data.purchaseItems.filter((item) => item.purchaseId != null && purchaseIds.has(item.purchaseId)).map((item) => item.wineId))
   return data.wines.filter((wine) => wineIds.has(wine.id))
 }
 
@@ -21,7 +21,7 @@ export function visitCanBeDeleted(data: CellarData, visitId: string) {
 
 export function bottlesPurchasedForVisit(data: CellarData, visitId: string) {
   const purchaseIds = new Set(data.purchases.filter((purchase) => purchase.wineryVisitId === visitId).map((purchase) => purchase.id))
-  return data.purchaseItems.filter((item) => purchaseIds.has(item.purchaseId)).reduce((sum, item) => sum + item.quantity, 0)
+  return data.purchaseItems.filter((item) => item.purchaseId != null && purchaseIds.has(item.purchaseId)).reduce((sum, item) => sum + item.quantity, 0)
 }
 
 export function unlinkedPurchasesForVisit(data: CellarData, visit: VisitRecord): PurchaseRecord[] {
