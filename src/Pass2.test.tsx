@@ -33,7 +33,7 @@ it.each(['Opened','Gifted'])('%s starts with only selected wine lots, prefers no
  await submit();expect(api.rpc.mock.calls[0][1].p_purchase_item_id).toBe('normal');if(kind==='Opened')expect(api.rpc.mock.calls[0][1].p_status).toBe('open')
 })
 it('Change Wine exposes search and selects that wine’s normal lot',()=>{
- render(<WorkflowModal action="open-bottle" householdId="household" data={data} initialWineId="wine" onSaved={saved} onClose={close} onNotice={notice}/>);fireEvent.click(screen.getByRole('button',{name:'Change Wine'}));change('Wine','other');expect((screen.getByLabelText('Bottle and location') as HTMLSelectElement).value).toContain('otherlot')
+ render(<WorkflowModal action="open-bottle" householdId="household" data={data} initialWineId="wine" onSaved={saved} onClose={close} onNotice={notice}/>);fireEvent.click(screen.getByRole('button',{name:'Change Wine'}));change('Wine','other');expect(screen.queryByLabelText('Bottle and location')).toBeNull();expect((document.querySelector('[name="bottle_lot"]') as HTMLInputElement).value).toContain('otherlot')
 })
 it('finish later preserves Kay’s existing half-rating and saves Scott edits without inventory RPCs',async()=>{
  const opening={id:'opening',wineId:'wine',status:'open',openedAt:'2026-08-01T12:00:00Z',openedBy:'Both'} as OpeningRecord

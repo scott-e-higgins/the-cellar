@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, type RefObject } from 'react'
 
 type Guard = { dirty: () => boolean; busy: () => boolean; accept: (form?: HTMLFormElement) => void; priority: number }
 const guards = new Set<Guard>()
+const completedForms = new WeakSet<HTMLFormElement>()
 const activeGuard = () => [...guards].sort((a, b) => b.priority - a.priority)[0]
 
 // Include disabled conditional fields: changing mode must not erase a draft.
@@ -15,7 +16,7 @@ export function formSnapshot(form: HTMLFormElement) {
 }
 
 export function markFormSaved(form?: HTMLFormElement | null) {
-  if (form) guards.forEach((guard) => guard.accept(form))
+  if (form) { completedForms.add(form); guards.forEach((guard) => guard.accept(form)) }
 }
 
 export function confirmAbandon() {
@@ -35,16 +36,23 @@ export function useFormGuard(surface: RefObject<HTMLElement | null>, priority: n
     const collect = () => {
       for (const form of baselines.keys()) if (!surface.current?.contains(form)) baselines.delete(form)
       surface.current?.querySelectorAll<HTMLFormElement>('form').forEach((form) => {
-        if (!baselines.has(form)) baselines.set(form, formSnapshot(form))
+        if (!baselines.has(form) || completedForms.has(form)) baselines.set(form, formSnapshot(form))
       })
     }
+    const changed = (event: Event) => {
+      const form = event.target instanceof Element ? event.target.closest('form') : null
+      if (form) completedForms.delete(form)
+    }
+    const element = surface.current
+    element?.addEventListener('input', changed)
+    element?.addEventListener('change', changed)
     collect()
     const observer = new MutationObserver(collect)
     if (surface.current) observer.observe(surface.current, { childList: true, subtree: true })
     const guard: Guard = {
       priority,
-      busy: () => busyRef.current || Boolean(surface.current?.querySelector('form[aria-busy="true"]')),
-      dirty: () => { collect(); return [...baselines].some(([form, baseline]) => formSnapshot(form) !== baseline) },
+      busy: () => { collect(); if (baselines.size && [...baselines.keys()].every(form => completedForms.has(form))) return false; return busyRef.current || Boolean(surface.current?.querySelector('form[aria-busy="true"]')) },
+      dirty: () => { collect(); return [...baselines].some(([form, baseline]) => !completedForms.has(form) && formSnapshot(form) !== baseline) },
       accept: (target) => {
         collect()
         if (target && !baselines.has(target)) return
@@ -52,7 +60,7 @@ export function useFormGuard(surface: RefObject<HTMLElement | null>, priority: n
       },
     }
     guards.add(guard)
-    return () => { observer.disconnect(); guards.delete(guard) }
+    return () => { observer.disconnect(); element?.removeEventListener('input', changed); element?.removeEventListener('change', changed); guards.delete(guard) }
   }, [surface, priority])
 }
 
