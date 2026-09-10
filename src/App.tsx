@@ -564,10 +564,11 @@ const MORE_LINKS: Array<{ icon: IconName; label: string; detail: string }> = [
   { icon: 'statistics', label: 'Statistics', detail: 'Useful collection insights' },
   { icon: 'storage', label: 'Storage', detail: 'Bottle locations and movements' },
   { icon: 'document', label: 'Documents & Receipts', detail: 'Purchase paperwork and scans' },
+  { icon: 'history', label: 'Trip Links', detail: 'Review historical acquisition links' },
   { icon: 'search', label: 'Data Enrichment', detail: 'Online wine and winery information' },
   { icon: 'settings', label: 'Settings', detail: 'Collection and app preferences' },
 ]
-const MORE_TARGETS: Record<string, ManagementTarget['kind']> = { History:'history', Favorites:'favorites', Statistics:'statistics', Storage:'storage', 'Documents & Receipts':'documents', 'Data Enrichment':'enrichment', Settings:'settings' }
+const MORE_TARGETS: Record<string, ManagementTarget['kind']> = { History:'history', 'Trip Links':'trips', Favorites:'favorites', Statistics:'statistics', Storage:'storage', 'Documents & Receipts':'documents', 'Data Enrichment':'enrichment', Settings:'settings' }
 
 function MoreView({ household, onSignOut, onManage }: { household: HouseholdContext; onSignOut: () => void; onManage: (target: ManagementTarget) => void }) {
   return (
