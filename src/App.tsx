@@ -343,7 +343,7 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
   }, [refresh])
 
   useEffect(() => {
-    if (preview || dataLoading || directLinkHandled.current || !directLink) return
+    if (preview || dataLoading || dataError || directLinkHandled.current || !directLink) return
     directLinkHandled.current = true
     const target: ManagementTarget | null = directLink.kind === 'visit'
       ? (() => { const record = data.visits.find((item) => item.id === directLink.id); return record ? { kind: 'visit', record } : null })()
@@ -355,7 +355,7 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
     const stack: ManagementTarget[] = [target]
     setManagementStack(stack)
     pushCellarHistory({ ...window.history.state, cellarOverlay: { type: 'management', stack } })
-  }, [data, dataLoading, directLink, preview])
+  }, [data, dataLoading, dataError, directLink, preview])
 
   useEffect(() => {
     if (!directLinkHandled.current || !directLink?.returnTo) return
@@ -587,16 +587,16 @@ function CardPhotoViewer({ photo, url, onClose }: { photo: PhotoRecord; url?: st
   return <LightboxLayer ariaLabel="Photo viewer" onDismiss={onClose}><button className="photo-viewer-close" onClick={onClose} aria-label="Close photo">×</button><figure>{url ? <PhotoImage src={url} alt={photo.caption ?? 'Cellar photo'} /> : <p className="photo-viewer-loading">Loading photo…</p>}{photo.caption && <figcaption>{photo.caption}</figcaption>}</figure></LightboxLayer>
 }
 
-const MORE_LINKS: Array<{ icon: IconName; label: string; detail: string }> = [
-  { icon: 'history', label: 'History', detail: 'Purchases, moves and openings' },
-  { icon: 'heart', label: 'Favorites', detail: 'Household member preferences' },
-  { icon: 'statistics', label: 'Statistics', detail: 'Useful collection insights' },
-  { icon: 'storage', label: 'Storage', detail: 'Bottle locations and movements' },
-  { icon: 'document', label: 'Documents & Receipts', detail: 'Purchase paperwork and scans' },
-  { icon: 'history', label: 'Inventory Audit', detail: 'Count and reconcile one location' },
-  { icon: 'history', label: 'Trip Links', detail: 'Review historical acquisition links' },
-  { icon: 'search', label: 'Data Enrichment', detail: 'Online wine and winery information' },
-  { icon: 'settings', label: 'Settings', detail: 'Collection and app preferences' },
+const MORE_LINKS: Array<{ icon: IconName; label: string; detail: string; group: string }> = [
+  { icon: 'history', label: 'History', group: 'Our collection', detail: 'Purchases, moves and openings' },
+  { icon: 'heart', label: 'Favorites', group: 'Our collection', detail: 'Household member preferences' },
+  { icon: 'statistics', label: 'Statistics', group: 'Our collection', detail: 'Useful collection insights' },
+  { icon: 'storage', label: 'Storage', group: 'Bottles & storage', detail: 'Bottle locations and movements' },
+  { icon: 'document', label: 'Documents & Receipts', group: 'Tools & records', detail: 'Purchase paperwork and scans' },
+  { icon: 'history', label: 'Inventory Audit', group: 'Bottles & storage', detail: 'Count and reconcile one location' },
+  { icon: 'history', label: 'Trip Links', group: 'Tools & records', detail: 'Review historical acquisition links' },
+  { icon: 'search', label: 'Data Enrichment', group: 'Tools & records', detail: 'Online wine and winery information' },
+  { icon: 'settings', label: 'Settings', group: 'Tools & records', detail: 'Collection and app preferences' },
 ]
 const MORE_TARGETS: Record<string, ManagementTarget['kind']> = { History:'history', 'Inventory Audit':'inventory-audit', 'Trip Links':'trips', Favorites:'favorites', Statistics:'statistics', Storage:'storage', 'Documents & Receipts':'documents', 'Data Enrichment':'enrichment', Settings:'settings' }
 
@@ -604,7 +604,7 @@ function MoreView({ household, onSignOut, onManage }: { household: HouseholdCont
   return (
     <div className="screen more-screen">
       <section className="account-card brass-corners"><BrandMark/><div><p className="eyebrow">CONNECTED COLLECTION</p><h2>{household.displayName}</h2><p>{household.role === 'owner' ? 'Owner' : household.role === 'editor' ? 'Full access' : 'View only'}</p></div></section>
-      <div className="more-list">{MORE_LINKS.map((item) => <button key={item.label} onClick={() => onManage({ kind: MORE_TARGETS[item.label] } as ManagementTarget)}><span className="more-icon"><Icon name={item.icon}/></span><span><strong>{item.label}</strong><small>{item.detail}</small></span><Icon name="chevron" size={18}/></button>)}</div>
+      <div className="more-groups">{['Bottles & storage', 'Our collection', 'Tools & records'].map(group => <section className="more-group" key={group} aria-label={group}><h2>{group}</h2><div className="more-list">{MORE_LINKS.filter(item => item.group === group).map((item) => <button key={item.label} onClick={() => onManage({ kind: MORE_TARGETS[item.label] } as ManagementTarget)}><span className="more-icon"><Icon name={item.icon}/></span><span><strong>{item.label}</strong><small>{item.detail}</small></span><Icon name="chevron" size={18}/></button>)}</div></section>)}</div>
       <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
       <footer className="version-label"><strong>The Cellar</strong><span>Version {APP_VERSION}</span></footer>
     </div>

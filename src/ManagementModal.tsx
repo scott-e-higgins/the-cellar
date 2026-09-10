@@ -166,6 +166,8 @@ function EditSection({ title, children }: { title: string; children: ReactNode }
 function WineDetails({ wine, data, editing, setEditing, editable, busy, setBusy, setMessage, householdId, onSaved, onNotice, onNavigate, onOpenBottle, onGiftBottle, onMoveBottle, onEnrichmentAccepted }: { wine: WineRecord; data: CellarData; editing: boolean; setEditing: (value: boolean) => void; editable: boolean; busy: boolean; setBusy: (value: boolean) => void; setMessage: (value: string) => void; householdId: string; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onNavigate: (target: ManagementTarget) => void; onOpenBottle: (wineId: string) => void; onGiftBottle?: (wineId:string)=>void; onMoveBottle?: (wineId:string)=>void; onEnrichmentAccepted?: () => void }) {
   const preferences = useMemo(() => Object.fromEntries(data.preferences.filter((preference) => preference.wineId === wine.id).map((preference) => [preference.personId, preference])), [data.preferences, wine.id])
   const purchases = data.purchaseItems.filter((item) => item.wineId === wine.id).map((item) => ({ item, purchase: data.purchases.find((purchase) => purchase.id === item.purchaseId) })).filter((entry) => entry.purchase)
+  // Remount only when authoritative physical Aging state changes, not on unrelated refreshes.
+  const agingStateKey = JSON.stringify([wine.id, data.bottles.filter(b => b.wineId === wine.id && b.status === 'active').map(b => [b.id, b.isAging, b.userHoldUntilYear, b.effectiveHoldUntilYear]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))])
   const hasOnlineInfo = data.wineOnlineInfo.some(info => info.entityId === wine.id && Object.keys(info.acceptedData).length > 0)
   const storage = data.bottleLots.filter(lot => lot.wineId === wine.id && lot.quantity > 0).reduce((groups, lot) => {
     const current = groups.get(lot.storageLocationId) ?? { name: lot.storageLocationName, quantity: 0, aging: 0 }
@@ -209,7 +211,7 @@ function WineDetails({ wine, data, editing, setEditing, editable, busy, setBusy,
     <section className="detail-section"><h3>At a glance</h3><dl className="fact-grid"><Fact label="Vintage" value={wine.nonVintage ? 'NV' : wine.vintage?.toString()} /><Fact label="Type" value={wineClassification(wine,data).label ? `${wineClassification(wine,data).label}${wineClassification(wine,data).labelSourced ? ' · accepted online info' : ''}` : null} /><Fact label="Location" value={wine.storageNames.join(', ') || 'Not recorded'} /><Fact label="Closure" value={wine.closure} /></dl></section>
     <section className="detail-section"><p className="eyebrow burgundy">PERSONAL</p><h3>Our experience</h3>{wine.personalNotes && <p>{wine.personalNotes}</p>}{data.people.map(person=>{const preference=data.preferences.find(p=>p.wineId===wine.id&&p.personId===person.id);const reviews=data.reviews.filter(r=>r.personId===person.id&&data.openings.some(o=>o.id===r.openingId&&o.wineId===wine.id));return (preference?.notes||reviews.length>0||preference?.buyAgain) && <div className="personal-experience" key={person.id}><strong>{person.displayName}</strong>{preference?.notes&&<p>{preference.notes}</p>}{preference?.buyAgain&&<p>Buy again: {displayValue(preference.buyAgain)}</p>}{reviews.map(review=><div key={review.id}>{review.rating!=null&&<StarRatingDisplay value={review.rating} showValue />}{review.tastingNotes&&<p>{review.tastingNotes}</p>}{review.buyAgain&&<p>Buy again: {displayValue(review.buyAgain)}</p>}</div>)}</div>})}{!wine.personalNotes&&!data.openings.some(o=>o.wineId===wine.id)&&<p className="empty-copy compact">No tasting memories recorded yet.</p>}{data.openings.filter(o=>o.wineId===wine.id).map(opening=><RecordLink key={opening.id} title={opening.status==='open'?'Finish or review this bottle':'Opening & tasting notes'} subtitle={date(opening.openedAt)} onClick={()=>onNavigate({kind:'opening',record:opening})}/>)}</section>
     {purchases.length > 0 && <section className="detail-section"><h3>How it came to us</h3><div className="record-list">{purchases.map(({ item, purchase }) => <RecordLink key={item.id} title={`${item.quantity} bottle${item.quantity === 1 ? '' : 's'} · ${purchase!.acquisitionType === 'gift' ? 'Gift' : 'Purchased'}`} subtitle={[purchase!.acquisitionDate ? date(purchase!.acquisitionDate) : null, purchase!.acquisitionType === 'gift' ? purchase!.giftFrom : purchase!.purchaseLocation, item.totalCost == null ? null : money(item.totalCost)].filter(Boolean).join(' · ')} onClick={() => onNavigate({ kind: 'purchase', record: purchase! })} />)}</div></section>}
-    <AgingSection wine={wine} data={data} editable={editable} householdId={householdId} onSaved={onSaved} onNotice={onNotice} setMessage={setMessage} />
+    <AgingSection key={agingStateKey} wine={wine} data={data} editable={editable} householdId={householdId} onSaved={onSaved} onNotice={onNotice} setMessage={setMessage} />
     {wine.wineryId && <section className="detail-section"><h3>Winery</h3><RecordLink title={wine.wineryName??'Winery'} onClick={()=>{const winery=data.wineries.find(w=>w.id===wine.wineryId);if(winery)onNavigate({kind:'winery',record:winery})}} /></section>}
     {hasOnlineInfo && onlineInformation}{[wine.category,wine.style,wine.sweetness,wine.blendDescription,wine.country,wine.state,wine.region,wine.appellation,wine.vineyard,wine.closure,wine.officialWineryNotes].some(Boolean) && <details className="detail-section more-details"><summary>Previously recorded reference information</summary><dl className="fact-grid">{[['Type',wine.category],['Style',wine.style],['Sweetness',wine.sweetness],['Varietal or blend',wine.blendDescription],['Country',wine.country],['State',wine.state],['Region',wine.region],['Appellation',wine.appellation],['Vineyard',wine.vineyard],['Closure',wine.closure]].filter(([,value])=>value).map(([label,value])=><Fact key={label} label={label!} value={value} />)}</dl>{wine.officialWineryNotes && <p>{wine.officialWineryNotes}</p>}</details>}
   </div>
@@ -313,22 +315,28 @@ function VisitDetails({ visit, data, photoUrls, editing, setEditing, editable, b
     event.preventDefault(); if (!supabase || !editable) return
     setBusy(true); setMessage(''); const formElement = event.currentTarget; const form = new FormData(formElement)
     try {
+      const tripId = optional(form, 'trip_id')
+      if (tripId && tripId !== reference?.externalId && !data.trips.some(item => item.id === tripId)) throw new Error('Choose a valid Travel Journal trip.')
       const result = await supabase.from('winery_visits').update({ winery_id: String(form.get('winery_id')), visit_date: String(form.get('visit_date')), notes: optional(form, 'notes'), favorite: form.get('favorite') === 'on', would_visit_again: optional(form, 'would_visit_again') }).eq('household_id', householdId).eq('id', visit.id)
       if (result.error) throw result.error
-      const tripId = optional(form, 'trip_id')
-      if (tripId) {
-        if (tripId !== reference?.externalId) {
-          const selectedTrip = data.trips.find((item) => item.id === tripId)
-          if (!selectedTrip) throw new Error('Choose a valid Travel Journal trip.')
-          const payload = { household_id: householdId, winery_visit_id: visit.id, external_system: 'travel-journal', external_entity_type: 'trip', external_id: selectedTrip.id, display_label: selectedTrip.name, deep_link_path: null }
-          const linkResult = reference ? await supabase.from('travel_references').update(payload).eq('household_id', householdId).eq('id', reference.id) : await supabase.from('travel_references').insert(payload)
-          if (linkResult.error) throw linkResult.error
+      let tripWarning = ''
+      try {
+        if (tripId) {
+          if (tripId !== reference?.externalId) {
+            const selectedTrip = data.trips.find((item) => item.id === tripId)
+            if (!selectedTrip) throw new Error('Choose a valid Travel Journal trip.')
+            const payload = { household_id: householdId, winery_visit_id: visit.id, external_system: 'travel-journal', external_entity_type: 'trip', external_id: selectedTrip.id, display_label: selectedTrip.name, deep_link_path: null }
+            const linkResult = reference ? await supabase.from('travel_references').update(payload).eq('household_id', householdId).eq('id', reference.id) : await supabase.from('travel_references').insert(payload)
+            if (linkResult.error) throw linkResult.error
+          }
+        } else if (reference) {
+          const unlink = await supabase.from('travel_references').delete().eq('household_id', householdId).eq('id', reference.id)
+          if (unlink.error) throw unlink.error
         }
-      } else if (reference) {
-        const unlink = await supabase.from('travel_references').delete().eq('household_id', householdId).eq('id', reference.id)
-        if (unlink.error) throw unlink.error
+      } catch {
+        tripWarning = 'Visit saved; Trip link could not be updated. Edit Visit to try the Trip change again.'
       }
-      await finishSuccessfulAction({ form: formElement, refresh: onSaved, finish: () => setEditing(false), notice: onNotice, message: 'Visit saved.' })
+      await finishSuccessfulAction({ form: formElement, refresh: onSaved, finish: () => setEditing(false), notice: onNotice, message: tripWarning || 'Visit saved.', tone: tripWarning ? 'warning' : 'success' })
     } catch (error) { setMessage(userError(error, 'The visit could not be saved. Please try again.')) } finally { setBusy(false) }
   }
   const remove = async () => {

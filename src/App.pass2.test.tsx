@@ -4,9 +4,9 @@ import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-libra
 import {CellarShell} from './App'
 import {EMPTY_CELLAR_DATA,type CellarData} from './lib/cellar-data'
 import {installUnsavedNavigationGuard,pushCellarHistory} from './lib/unsaved-changes'
-const api=vi.hoisted(()=>({load:vi.fn(),rpc:vi.fn(),sign:vi.fn(),invoke:vi.fn()}))
+const api=vi.hoisted(()=>({load:vi.fn(),rpc:vi.fn(),sign:vi.fn(),invoke:vi.fn(),from:vi.fn()}))
 vi.mock('./lib/cellar-data',async original=>({...await original<typeof import('./lib/cellar-data')>(),loadCellarData:api.load}))
-vi.mock('./lib/supabase',()=>({supabase:{rpc:api.rpc,functions:{invoke:api.invoke},storage:{from:()=>({createSignedUrl:api.sign})}},isSupabaseConfigured:true}))
+vi.mock('./lib/supabase',()=>({supabase:{rpc:api.rpc,from:api.from,functions:{invoke:api.invoke},storage:{from:()=>({createSignedUrl:api.sign})}},isSupabaseConfigured:true}))
 const wine={id:'wine',name:'Test Red',wineryId:'winery',wineryName:'Test Winery',nonVintage:false,vintage:2023,availableQuantity:3,agingCount:0,storageNames:['Rack'],selectorNames:[],buyAgain:[],averageRating:null,createdAt:'2026-01-01'}
 const data={...EMPTY_CELLAR_DATA,wines:[wine],wineries:[{id:'winery',name:'Test Winery',wineCount:1,visitCount:1}],visits:[{id:'visit',wineryId:'winery',visitDate:'2026-08-01',notes:'Our visit'}],purchases:[{id:'purchase',wineryVisitId:'visit',acquisitionDate:'2026-08-01'}],purchaseItems:[{id:'item',purchaseId:'purchase',wineId:'wine',quantity:3}],wineOnlineInfo:[{entityId:'wine',acceptedData:{category:'Red Wine'},confidence:'high'}]} as unknown as CellarData
 beforeEach(()=>{vi.clearAllMocks();installUnsavedNavigationGuard();pushCellarHistory({cellarOverlay:null},'#/cellar');vi.spyOn(window,'confirm').mockReturnValue(false);HTMLElement.prototype.scrollTo=vi.fn();api.load.mockResolvedValue(data);api.rpc.mockResolvedValue({data:1,error:null});api.invoke.mockResolvedValue({data:{},error:null})})
@@ -77,4 +77,51 @@ it.each([false,true])('Move returns to updated Wine, preserves context, and avoi
  const updated={...initial,wines:[{...wine,availableQuantity:1,storageNames:['Other Rack']}],bottles:[{...bottle,storageLocationId:'other'}],bottleLots:[{...initial.bottleLots[0],storageLocationId:'other',storageLocationName:'Other Rack'}]}
  if(refreshFails)api.load.mockRejectedValueOnce(new Error('offline'));else api.load.mockResolvedValue(updated)
  fireEvent.click(screen.getByRole('button',{name:'Save'}));await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Change Location'})).toBeNull());expect(api.rpc).toHaveBeenCalledOnce();expect(api.rpc.mock.calls[0]).toEqual(['move_physical_bottles',expect.objectContaining({p_bottle_ids:['bottle'],p_from_location_id:'rack',p_to_location_id:'other'})]);if(refreshFails){api.load.mockResolvedValue(updated);fireEvent.click(screen.getAllByRole('button',{name:'Retry Refresh'})[0]);await waitFor(()=>expect(screen.queryAllByRole('button',{name:'Retry Refresh'})).toHaveLength(0))}expect(screen.getByRole('dialog').textContent).toContain('Other Rack');fireEvent.click(screen.getByRole('button',{name:'Back'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());expect((screen.getByLabelText('Search the cellar') as HTMLInputElement).value).toBe('Test');expect(window.confirm).not.toHaveBeenCalled()
+})
+
+
+it('Aging controls follow refreshed physical bottles after a gift, without leaking a departed hold',async()=>{
+ const normal={id:'normal',wineId:'wine',purchaseItemId:'item',storageLocationId:'rack',status:'active',isAging:false}
+ const aging={...normal,id:'aging',isAging:true,userHoldUntilYear:2035,effectiveHoldUntilYear:2035}
+ const lots=[{wineId:'wine',purchaseId:'purchase',purchaseItemId:'item',storageLocationId:'rack',storageLocationName:'Rack',quantity:2,normalQuantity:1,agingQuantity:1}]
+ api.load.mockResolvedValue({...data,bottles:[normal,aging],bottleLots:lots});await mount()
+ fireEvent.click(screen.getAllByRole('button',{name:'Open Test Red'})[0]);expect((screen.getByLabelText('Aging',{exact:true}) as HTMLInputElement).checked).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Gift Bottle'}));const form=screen.getByRole('dialog',{name:'Gift Bottle'})
+ fireEvent.change(within(form).getByLabelText('Gifted to'),{target:{value:'Friend'}})
+ // A refresh can also incorporate a household member's inventory changes.
+ api.load.mockResolvedValue({...data,wines:[{...wine,availableQuantity:1}],bottles:[normal,{...aging,status:'gifted'}],bottleLots:[{...lots[0],quantity:1,agingQuantity:0}]})
+ fireEvent.click(within(form).getByRole('button',{name:'Save'}));await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Gift Bottle'})).toBeNull())
+ expect((screen.getByLabelText('Aging',{exact:true}) as HTMLInputElement).checked).toBe(false)
+ fireEvent.click(screen.getByLabelText('Aging',{exact:true}));expect((screen.getByLabelText('Hold until') as HTMLInputElement).value).toBe('')
+})
+
+
+it('More groups existing actions on one screen and opens Storage directly',async()=>{
+ await mount();fireEvent.click(screen.getByRole('button',{name:'More'}));
+ for(const group of ['Bottles & storage','Our collection','Tools & records'])expect(screen.getByRole('region',{name:group})).toBeTruthy()
+ expect(within(screen.getByRole('region',{name:'Bottles & storage'})).getByRole('button',{name:/Inventory Audit/})).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:/Storage Bottle locations/}));expect(screen.getByRole('dialog',{name:'Storage'})).toBeTruthy()
+})
+it.each([false,true])('Visit saved but Trip-link failure closes editing with a persistent partial-success warning (refresh fails: %s)',async(refreshFails)=>{
+ api.load.mockResolvedValue({...data,trips:[{id:'trip',name:'Test Trip',startDate:'2026-08-01',endDate:'2026-08-02'}]})
+ const update=vi.fn(()=>({eq:()=>({eq:async()=>({error:null})})}));const insert=vi.fn().mockResolvedValue({error:{message:'Trip link failed'}})
+ api.from.mockImplementation((table)=>table==='winery_visits'?{update}:{insert})
+ await mount();fireEvent.click(screen.getByRole('button',{name:'Wineries'}));fireEvent.click(screen.getAllByRole('button',{name:'Open Test Winery'})[0]);fireEvent.click(screen.getByRole('button',{name:/Our visit/}));fireEvent.click(screen.getByRole('button',{name:'Edit Visit'}));await act(async()=>{})
+ fireEvent.change(screen.getByLabelText('Travel Journal trip'),{target:{value:'trip'}});fireEvent.change(screen.getByLabelText('Visit notes'),{target:{value:'Saved memory'}})
+ if(refreshFails)api.load.mockRejectedValueOnce(new Error('offline'))
+ fireEvent.click(screen.getByRole('button',{name:'Save visit'}));await waitFor(()=>expect(screen.queryByLabelText('Visit notes')).toBeNull())
+ expect(screen.getByRole('status').textContent).toContain('Visit saved; Trip link could not be updated')
+ expect(update).toHaveBeenCalledOnce();expect(insert).toHaveBeenCalledOnce();expect(window.confirm).not.toHaveBeenCalled()
+})
+
+
+it('Travel Journal record link survives an initial collection-load failure and opens after Retry Refresh',async()=>{
+ const id='06e77eaa-b0f5-47cf-97ff-7973964ea4d6'
+ pushCellarHistory({cellarOverlay:null},`/?wine=${id}#/cellar`)
+ try {
+  api.load.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({...data,wines:[{...wine,id}]})
+  render(<CellarShell household={{householdId:'household',role:'owner',displayName:'Tester'}} onSignOut={vi.fn()}/>)
+  fireEvent.click(await screen.findByRole('button',{name:'Retry Refresh'}))
+  expect(await screen.findByRole('dialog',{name:'Test Red'})).toBeTruthy()
+ } finally {pushCellarHistory({cellarOverlay:null},'/#/cellar')}
 })

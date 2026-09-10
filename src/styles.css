@@ -772,3 +772,10 @@ button:not(:disabled):active { transform: translateY(1px); }
 .wine-entry-form > .workflow-fields { display:grid; gap:inherit; padding-bottom:calc(88px + env(safe-area-inset-bottom)); }
 .wine-entry-form .entry-save { margin:0; padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
 .wine-entry-form :is(input,select,textarea,summary,button) { scroll-margin-bottom:calc(96px + env(safe-area-inset-bottom)); }
+
+/* Secondary tools stay one tap away, grouped without another navigation layer. */
+.more-groups { display: grid; gap: 20px; }
+.more-group h2 { margin: 0 0 8px; color: var(--burgundy); font-size: 17px; }
+.more-group .more-list { box-shadow: none; }
+.more-group .more-list button { min-height: 56px; padding-block: 11px; }
+.more-group .more-list small { font-size: 12px; }
