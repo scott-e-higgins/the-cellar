@@ -76,9 +76,24 @@ export function WorkflowModal({
   const inFlight = useRef(false)
   const pendingPhoto = useRef<null | (() => Promise<void>)>(null)
   const [photoFailed, setPhotoFailed] = useState(false)
+  const [unconfirmed, setUnconfirmed] = useState(false)
+  const uncertain = useRef(false)
   const warning = useRef('')
   const complete = async () => {
     await finishSuccessfulAction({ form: savingForm.current, refresh: onSaved, finish: onClose, notice: onNotice, message: warning.current || 'Saved successfully.', tone: warning.current ? 'warning' : 'success' })
+  }
+  const checkUnconfirmedSave = async () => {
+    if (inFlight.current) return
+    inFlight.current = true; setBusy(true)
+    try {
+      await onSaved()
+      // The user is explicitly leaving to check the outcome, not retrying a mutation.
+      markFormSaved(savingForm.current)
+      onClose()
+      onNotice('Check the refreshed record and History before recording this again; the previous save could not be confirmed.', 'warning')
+    } catch {
+      setMessage('The screen could not refresh. Try Refresh & Check again; this will not repeat the save.')
+    } finally { inFlight.current = false; setBusy(false) }
   }
   const retryPhoto = async () => {
     if (inFlight.current || !pendingPhoto.current) return
@@ -99,19 +114,21 @@ export function WorkflowModal({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!supabase || blocked || inFlight.current || saved.current) return
+    if (!supabase || blocked || inFlight.current || saved.current || uncertain.current) return
     inFlight.current = true
     setBusy(true)
     setMessage('')
     savingForm.current = event.currentTarget
     const form = new FormData(event.currentTarget)
     let nonBlockingWarning = ''
+    let mutationStarted = false
 
     try {
       const photo = form.get('photo')
       if (photo instanceof File && photo.size > 0) validatePhoto(photo)
       if (action === 'add-winery-visit' && optional(form, 'trip_id') && !data.trips.some((trip) => trip.id === optional(form, 'trip_id'))) throw new Error('Choose a valid Travel Journal trip.')
       if (action === 'add-winery') {
+        mutationStarted = true
         const { error } = await supabase.from('wineries').insert({
           household_id: householdId,
           name: String(form.get('name')).trim(),
@@ -127,6 +144,7 @@ export function WorkflowModal({
       }
 
       if (action === 'open-bottle') {
+        mutationStarted = true
         const [purchaseItemId, storageLocationId] = String(form.get('bottle_lot')).split('|')
         if (form.get('departure_type') === 'gifted') {
           const { error } = await supabase.rpc('gift_bottle_v2', {
@@ -169,6 +187,7 @@ export function WorkflowModal({
       }
 
       if (action === 'add-winery-visit') {
+        mutationStarted = true
         const { data: createdVisit, error } = await supabase.from('winery_visits').insert({
           household_id: householdId,
           winery_id: String(form.get('winery_id')),
@@ -213,6 +232,9 @@ export function WorkflowModal({
           setMessage('Record saved; photo not added. A follow-up step also failed; check the record for missing details. Retry Photo will only retry the photo.')
           await onSaved().catch(() => {})
         } else await complete()
+      } else if (mutationStarted && !/^[0-9A-Z]{5}$/.test(String((error as {code?:string})?.code ?? ''))) {
+        uncertain.current = true; setUnconfirmed(true)
+        setMessage('Save could not be confirmed. Refresh and check the record and History before recording this again.')
       } else setMessage(userError(error, 'The record could not be saved. Please try again.'))
     } finally {
       inFlight.current = false
@@ -230,13 +252,13 @@ export function WorkflowModal({
           <button className="icon-close" onClick={onClose} disabled={busy} aria-label="Close">×</button>
         </div>
         <form className="workflow-form" onSubmit={submit}>
-          <fieldset className="workflow-fields" disabled={busy || saved.current}>
+          <fieldset className="workflow-fields" disabled={busy || saved.current || unconfirmed}>
           {action === 'add-winery' && <WineryFields />}
           {action === 'open-bottle' && <OpeningFields data={data} initialWineId={initialWineId} initialDepartureType={initialDepartureType} />}
           {action === 'add-winery-visit' && <VisitFields data={data} initialWineryId={initialWineryId} />}
           </fieldset>
           {message && <p className="form-message error" role="alert">{message}</p>}
-          <div className="form-actions"><button type="button" data-discard className="secondary-button" onClick={onClose} disabled={busy}>{saved.current ? 'Done' : 'Cancel'}</button>{photoFailed ? <button type="button" className="primary-button" disabled={busy} onClick={() => void retryPhoto()}>{busy ? 'Adding photo…' : 'Retry Photo'}</button> : <button className="primary-button" disabled={busy || blocked || saved.current}>{busy ? 'Saving…' : 'Save'}</button>}</div>
+          <div className="form-actions"><button type="button" data-discard className="secondary-button" onClick={onClose} disabled={busy}>{saved.current ? 'Done' : 'Cancel'}</button>{unconfirmed ? <button type="button" className="primary-button" disabled={busy} onClick={() => void checkUnconfirmedSave()}>{busy ? 'Refreshing…' : 'Refresh & Check'}</button> : photoFailed ? <button type="button" className="primary-button" disabled={busy} onClick={() => void retryPhoto()}>{busy ? 'Adding photo…' : 'Retry Photo'}</button> : <button className="primary-button" disabled={busy || blocked || saved.current}>{busy ? 'Saving…' : 'Save'}</button>}</div>
         </form>
     </ModalLayer>
   )
