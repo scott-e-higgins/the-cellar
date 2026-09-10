@@ -1,3 +1,4 @@
+import type { EntryContext } from './lib/entry-context'
 import { HistoryCorrection } from './HistoryCorrection'
 import { PhotoImage } from './PhotoImage'
 import { displayValue, wineryContact, purchaseMatch } from './lib/presentation'
@@ -59,8 +60,8 @@ function photosFor(target: ManagementTarget, data: CellarData) {
   })
 }
 
-export function ManagementModal({ target, householdId, data, photoUrls, editable, canGoBack, navigationDepth, returnToEnrichment, onBack, onClose, onNavigate, onVisitDeleted, onAddVisit, onAddPurchase, onSaved, onNotice, onOpenBottle }: {
-  target: ManagementTarget; householdId: string; data: CellarData; photoUrls: Record<string, string>; editable: boolean; canGoBack: boolean; navigationDepth: number; returnToEnrichment: boolean; onBack: () => void; onClose: () => void; onNavigate: (target: ManagementTarget) => void; onVisitDeleted: (wineryId: string) => void; onAddVisit: (wineryId: string) => void; onAddPurchase: (visit: VisitRecord, tripId: string | null) => void; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onOpenBottle: (wineId: string) => void
+export function ManagementModal({ target, householdId, data, photoUrls, editable, canGoBack, navigationDepth, returnToEnrichment, onBack, onClose, onNavigate, onVisitDeleted, onAddVisit, onAddPurchase, onSaved, onNotice, onOpenBottle, onAddWine }: {
+  onAddWine?: (context:EntryContext)=>void; target: ManagementTarget; householdId: string; data: CellarData; photoUrls: Record<string, string>; editable: boolean; canGoBack: boolean; navigationDepth: number; returnToEnrichment: boolean; onBack: () => void; onClose: () => void; onNavigate: (target: ManagementTarget) => void; onVisitDeleted: (wineryId: string) => void; onAddVisit: (wineryId: string) => void; onAddPurchase: (visit: VisitRecord, tripId: string | null) => void; onSaved: () => Promise<void>; onNotice: (message: string, tone?: NoticeTone) => void; onOpenBottle: (wineId: string) => void
 }) {
   const [tab, setTab] = useState<DetailTab>('details')
   const [editing, setEditing] = useState(false)
@@ -115,6 +116,8 @@ export function ManagementModal({ target, householdId, data, photoUrls, editable
       </div>
       {recordTarget && tabbedRecordTarget && <div className="detail-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => { setTab('details'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'details' }); modalRef.current?.scrollTo({ top: 0 }) }}>Details</button><button className={tab === 'history' ? 'active' : ''} onClick={() => { setTab('history'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'history' }); modalRef.current?.scrollTo({ top: 0 }) }}>History</button><button className={tab === 'photos' ? 'active' : ''} onClick={() => { setTab('photos'); contextByTarget.current.set(currentKey, { scrollTop: 0, tab: 'photos' }); modalRef.current?.scrollTo({ top: 0 }) }}>Photos</button></div>}
       {recordTarget && tab === 'details' && <>
+        {!editing&&editable&&onAddWine&&target.kind==='winery'&&<button className="secondary-button" onClick={()=>onAddWine({wineryId:target.record.id})}>Add Wine / Bottles</button>}
+        {!editing&&editable&&onAddWine&&target.kind==='purchase'&&<button className="secondary-button" onClick={()=>onAddWine({purchaseId:target.record.id,date:target.record.acquisitionDate,visitId:target.record.wineryVisitId,tripId:data.travelReferences.find(r=>r.purchaseId===target.record.id)?.externalId,wineryId:data.wines.find(w=>w.id===data.purchaseItems.find(i=>i.purchaseId===target.record.id)?.wineId)?.wineryId})}>Add another Wine</button>}
         {!returnToEnrichment && <RecordHero target={target} data={data} hasPhoto={Boolean(hero)} url={hero ? photoUrls[hero.id] : undefined} editable={editable} onView={() => hero && viewPhoto(hero)} onAdd={() => { setPhotoPrompt(true); setTab('photos') }} />}
         {returnToEnrichment && (target.kind==='wine'||target.kind==='winery') && <RecordEnrichment key={currentKey} kind={target.kind} entityId={target.record.id} data={data} editable={editable} onSaved={onSaved} onAccepted={backFromCurrent} onNotice={onNotice} reviewFocus />}
         {target.kind === 'wine' && !returnToEnrichment && <WineDetails wine={target.record} data={data} editing={editing} setEditing={setEditing} editable={editable} busy={busy} setBusy={setBusy} setMessage={setMessage} householdId={householdId} onSaved={onSaved} onNotice={onNotice} onNavigate={navigateFromCurrent} onOpenBottle={onOpenBottle} onEnrichmentAccepted={returnToEnrichment ? backFromCurrent : undefined} />}

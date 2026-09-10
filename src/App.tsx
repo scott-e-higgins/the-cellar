@@ -1,3 +1,5 @@
+import type { EntryContext } from './lib/entry-context'
+import type { EntryCompletion } from './lib/entry-types'
 import { PhotoImage } from './PhotoImage'
 import { sortWines } from './lib/presentation'
 import { wineClassification } from './lib/wine-classification'
@@ -45,7 +47,7 @@ type IconName =
   | 'chevron'
   | 'close'
 
-type ActionContext = { wineryId?: string | null; visitId?: string | null; date?: string | null; tripId?: string | null }
+type ActionContext = EntryContext
 
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -239,6 +241,9 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
   const [quickOpen, setQuickOpen] = useState(false)
   const [activeAction, setActiveAction] = useState<QuickAction | null>(null)
   const [openingWineId, setOpeningWineId] = useState<string | null>(null)
+  const [entryReceipt,setEntryReceipt]=useState<EntryCompletion|null>(null)
+  const [retryingPhoto,setRetryingPhoto]=useState(false)
+  const dataRef=useRef<CellarData>(EMPTY_CELLAR_DATA)
   const [actionContext, setActionContext] = useState<ActionContext>({})
   const [data, setData] = useState<CellarData>(EMPTY_CELLAR_DATA)
   const [dataLoading, setDataLoading] = useState(!preview)
@@ -313,7 +318,10 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
     setDataLoading(true)
     setDataError('')
     try {
-      setData(await loadCellarData(supabase, household.householdId))
+      const next=await loadCellarData(supabase, household.householdId)
+      dataRef.current=next
+      setData(next)
+      setEntryReceipt(r=>r?{...r,refreshFailed:false}:r)
     } catch (error) {
       setDataError(userError(error, 'The collection could not be loaded. Retry Refresh to try again.'))
       throw error
@@ -362,6 +370,25 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
     setActiveAction(action)
   }
 
+  const completeEntry=(receipt:EntryCompletion)=>{
+    setEntryReceipt(receipt)
+    const wine=dataRef.current.wines.find(w=>w.id===receipt.result.wine_ids[0])
+    const stack=managementStack.length?managementStack: wine?[{kind:'wine' as const,record:wine}]:[]
+    window.history.replaceState({...window.history.state,cellarOverlay:stack.length?{type:'management',stack}:null},'')
+    setActiveAction(null);setManagementStack(stack)
+  }
+  const retryEntryPhoto=async()=>{
+    if(!entryReceipt?.retryPhoto||retryingPhoto)return
+    setRetryingPhoto(true)
+    try{
+      await entryReceipt.retryPhoto()
+      setEntryReceipt({...entryReceipt,retryPhoto:undefined})
+      try{await refresh();setToast({message:'Photo added.',tone:'success'})}
+      catch{setEntryReceipt({...entryReceipt,retryPhoto:undefined,refreshFailed:true});setToast({message:'Photo added, but the screen could not refresh.',tone:'warning'})}
+    }
+    catch{setToast({message:'The wine is saved. Photo could not be added; retry the photo.',tone:'warning'})}
+    finally{setRetryingPhoto(false)}
+  }
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -380,9 +407,10 @@ export function CellarShell({ household, preview = false, onSignOut }: { househo
         <div hidden={view !== 'more'}><MoreView household={household} onSignOut={onSignOut} onManage={openManagement} /></div>
       </main>
       <BottomNav view={view} go={go} onQuick={() => { setQuickOpen(true); pushOverlay({ type: 'quick' }) }} />
+      {entryReceipt&&!activeAction&&<div className="entry-receipt" role="status"><span>Wine saved</span>{entryReceipt.result.purchase_id&&<button disabled={!!entryReceipt.retryPhoto||entryReceipt.refreshFailed} onClick={()=>{startAction('add-wine',null,entryReceipt.context);setEntryReceipt(null)}}>Add Another</button>}{entryReceipt.refreshFailed&&<button data-keep-draft onClick={()=>void refresh().catch(()=>{})}>Retry Refresh</button>}{entryReceipt.retryPhoto&&<button data-keep-draft disabled={retryingPhoto} onClick={()=>void retryEntryPhoto()}>{retryingPhoto?'Adding photo…':'Retry Photo'}</button>}{entryReceipt.retryPhoto&&<button data-keep-draft disabled={retryingPhoto} onClick={()=>setEntryReceipt({...entryReceipt,retryPhoto:undefined})}>Continue without photo</button>}<button data-keep-draft aria-label="Dismiss entry confirmation" onClick={()=>setEntryReceipt(null)}>×</button></div>}
       {quickOpen && <QuickActions onClose={() => window.history.back()} onSelect={startAction} />}
-      {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} initialWineryId={actionContext.wineryId} initialVisitId={actionContext.visitId} initialDate={actionContext.date} initialTripId={actionContext.tripId} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
-      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onVisitDeleted={returnToWineryAfterVisitDelete} onAddVisit={(wineryId) => startAction('add-winery-visit', null, { wineryId })} onAddPurchase={(visit, tripId) => startAction('record-purchase', null, { wineryId: visit.wineryId, visitId: visit.id, date: visit.visitDate, tripId })} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
+      {activeAction && <WorkflowModal action={activeAction} householdId={household.householdId} data={data} initialWineId={openingWineId} initialWineryId={actionContext.wineryId} initialVisitId={actionContext.visitId} initialDate={actionContext.date} initialTripId={actionContext.tripId} initialPurchaseId={actionContext.purchaseId} initialLocationId={actionContext.locationId} onComplete={completeEntry} onClose={() => window.history.back()} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} />}
+      {visibleManagementTarget && <ManagementModal target={visibleManagementTarget} householdId={household.householdId} data={data} photoUrls={photoUrls} editable={household.role !== 'viewer'} canGoBack={managementStack.length > 1} navigationDepth={managementStack.length} returnToEnrichment={managementStack.at(-2)?.kind === 'enrichment'} onBack={() => window.history.back()} onClose={closeManagement} onNavigate={navigateManagement} onVisitDeleted={returnToWineryAfterVisitDelete} onAddVisit={(wineryId) => startAction('add-winery-visit', null, { wineryId })} onAddPurchase={(visit, tripId) => startAction('record-purchase', null, { wineryId: visit.wineryId, visitId: visit.id, date: visit.visitDate, tripId })} onSaved={refresh} onNotice={(message, tone = 'success') => setToast({ message, tone })} onAddWine={(context)=>startAction('add-wine',null,context)} onOpenBottle={(wineId) => startAction('open-bottle', wineId)} />}
       {cardPhoto && <CardPhotoViewer photo={cardPhoto} url={photoUrls[cardPhoto.id]} onClose={() => window.history.back()} />}
       {toast && <div className={`app-toast ${toast.tone}`} style={{ zIndex: OVERLAY_Z_INDEX.toast }} role="status">{toast.message}{toast.tone === 'warning' && <div className="toast-actions">{dataError && <button data-keep-draft disabled={dataLoading} onClick={() => void refresh().then(() => setToast(null)).catch(() => {})}>{dataLoading ? 'Refreshing…' : 'Retry Refresh'}</button>}<button data-keep-draft onClick={() => setToast(null)}>Dismiss</button></div>}</div>}
     </div>

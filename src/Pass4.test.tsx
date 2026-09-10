@@ -1,0 +1,43 @@
+// @vitest-environment jsdom
+import {afterEach,beforeEach,expect,it,vi} from 'vitest'
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import {AcquisitionModal} from './AcquisitionModal'
+import {EMPTY_CELLAR_DATA,type CellarData} from './lib/cellar-data'
+import {inferEntryContext} from './lib/entry-context'
+const api=vi.hoisted(()=>({rpc:vi.fn(),invoke:vi.fn(),upload:vi.fn(),metadata:vi.fn()}))
+vi.mock('./lib/supabase',()=>({supabase:{rpc:api.rpc,functions:{invoke:api.invoke},storage:{from:()=>({upload:api.upload})},from:()=>({upsert:api.metadata})}}))
+const data={...EMPTY_CELLAR_DATA,wineries:[{id:'w',name:'Forge'}],wines:[],locations:[{id:'rack',name:'Rack',isActive:true}],visits:[{id:'v',wineryId:'w',visitDate:'2026-09-05'}],trips:[{id:'t',name:'Finger Lakes 2026',startDate:'2026-09-04',endDate:'2026-09-07'}]} as unknown as CellarData
+const result={purchase_id:'p',wine_ids:['wine'],winery_id:'w',visit_id:'v',trip_id:'t'}
+const saved=vi.fn(),close=vi.fn(),notice=vi.fn(),complete=vi.fn()
+beforeEach(()=>{vi.clearAllMocks();api.rpc.mockResolvedValue({data:result,error:null});api.upload.mockResolvedValue({error:null});api.metadata.mockResolvedValue({error:null});saved.mockResolvedValue(undefined)})
+afterEach(cleanup)
+const mount=(extra:Partial<React.ComponentProps<typeof AcquisitionModal>>={})=>render(<AcquisitionModal action="add-wine" householdId="h" data={data} initialWineryId="w" initialDate="2026-09-05" onSaved={saved} onClose={close} onNotice={notice} onComplete={complete} {...extra}/>)
+const change=(label:string,value:string)=>fireEvent.change(screen.getByLabelText(label),{target:{value}})
+const submit=()=>fireEvent.submit(document.querySelector('form')!)
+it('one screen acquires wine with inferred Trip/Visit and explicitly completes',async()=>{
+ mount();change('Wine name','Riesling');change('Vintage','2023');change('Quantity','3');expect(screen.getByText('Trip: Finger Lakes 2026 ✓')).toBeTruthy();expect(screen.getByText(/Visit: Forge.*Sep 5/)).toBeTruthy();submit();await waitFor(()=>expect(complete).toHaveBeenCalledOnce());expect(api.rpc).toHaveBeenCalledWith('save_wine_entry',expect.objectContaining({p_details:expect.objectContaining({trip_id:'t',visit_id:'v',visit_mode:'auto',trip_mode:'auto'}),p_lines:[expect.objectContaining({quantity:3,new_wine:expect.objectContaining({name:'Riesling',vintage:2023}),storage_location_id:'rack'})]}));expect(complete.mock.calls[0][0]).toMatchObject({context:{purchaseId:'p',wineryId:'w',date:'2026-09-05',locationId:'rack',tripId:'t',visitId:'v'}})
+})
+it('a missing winery is selected inline but created only by the final atomic save',async()=>{
+ mount({initialWineryId:null});change('Winery','New Cellars');fireEvent.click(screen.getByRole('button',{name:'+ Add “New Cellars”'}));change('Winery location (optional)','Burdett');expect(api.rpc).not.toHaveBeenCalled();change('Wine name','New Wine');fireEvent.click(screen.getByLabelText('Create Visit for this date'));submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(api.rpc.mock.calls[0][1].p_details).toMatchObject({new_winery:{name:'New Cellars',city:'Burdett'},create_visit:true})
+})
+it.each(['exact','ambiguous'])('Find Wine Info reviews an %s result in place and sends only accepted attempt to save',async(matchType)=>{
+ api.invoke.mockResolvedValue({data:{attempt:{id:'a',status:'ready_for_review',confidence:matchType==='exact'?'high':'medium',match_type:matchType,match_explanation:'Check producer and vintage',proposed_data:{category:'Red Wine',vintage:2023,description:'Sourced'}},sources:[{source_name:'Producer',source_url:'https://example.com/wine'}]},error:null});mount();change('Wine name','Riesling');change('Vintage','2023');fireEvent.click(screen.getByRole('button',{name:'Find Wine Info'}));await screen.findByRole('button',{name:'Use This Info'});expect(api.rpc).not.toHaveBeenCalled();expect(screen.getByRole('link',{name:'Producer ↗'})).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Use This Info'}));submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(api.invoke.mock.calls[0][1]).toMatchObject({body:{action:'preview_wine',householdId:'h',draft:{name:'Riesling',winery_name:'Forge',vintage:2023}}});expect(api.rpc.mock.calls[0][1].p_lines[0]).toMatchObject({enrichment_attempt_id:'a'});expect(api.rpc.mock.calls[0][1].p_lines[0].new_wine.category).toBeUndefined()
+})
+it('identity changes invalidate accepted draft research',async()=>{
+ api.invoke.mockResolvedValue({data:{attempt:{id:'a',status:'ready_for_review',confidence:'high',match_type:'exact',proposed_data:{category:'Red Wine'}}},error:null});mount();change('Wine name','Original');fireEvent.click(screen.getByRole('button',{name:'Find Wine Info'}));fireEvent.click(await screen.findByRole('button',{name:'Use This Info'}));change('Vintage','2024');expect(screen.queryByText('✓ Information selected')).toBeNull();submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(api.rpc.mock.calls[0][1].p_lines[0].enrichment_attempt_id).toBeNull()
+})
+it('overlapping Trips require an explicit choice, including no Trip',async()=>{
+ mount({data:{...data,trips:[...data.trips,{...data.trips[0],id:'other',name:'Other trip'}]},initialDate:'2026-09-06'});change('Wine name','Riesling');submit();expect(api.rpc).not.toHaveBeenCalled();expect(screen.getAllByRole('alert').some(e=>e.textContent?.includes('Choose'))).toBe(true);change('Trip','');submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(api.rpc.mock.calls[0][1].p_details).toMatchObject({trip_mode:'manual',trip_id:null})
+})
+it('save failure keeps the same request and payload; refresh failure still completes',async()=>{
+ api.rpc.mockResolvedValueOnce({error:{message:'Network connection lost'}});mount();change('Wine name','Riesling');submit();await screen.findByRole('button',{name:'Retry Save'});const first=api.rpc.mock.calls[0][1];saved.mockRejectedValueOnce(new Error('Refresh failed'));submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(api.rpc.mock.calls[1][1]).toEqual(first);expect(complete.mock.calls[0][0].refreshFailed).toBe(true);expect(notice).toHaveBeenCalledWith('Saved, but the screen could not refresh.','warning');submit();expect(api.rpc).toHaveBeenCalledTimes(2)
+})
+it('photo validation runs before save and failed uploads retry only the photo',async()=>{
+ mount();change('Wine name','Photo Wine');const input=document.querySelector('input[type=file]')!;fireEvent.change(input,{target:{files:[new File(['bad'],'bad.txt',{type:'text/plain'})]}});submit();await waitFor(()=>expect(screen.getByRole('alert')).toBeTruthy());expect(api.rpc).not.toHaveBeenCalled();fireEvent.change(input,{target:{files:[new File(['photo'],'wine.jpg',{type:'image/jpeg'})]}});api.upload.mockResolvedValueOnce({error:{message:'offline'}});submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(notice).toHaveBeenCalledWith('Record saved; photo not added.','warning');await complete.mock.calls[0][0].retryPhoto();expect(api.rpc).toHaveBeenCalledOnce();expect(api.upload).toHaveBeenCalledTimes(2)
+})
+it('Add Another context starts with blank wine, quantity one and same storage/purchase',async()=>{
+ mount({initialPurchaseId:'p',initialLocationId:'rack',data:{...data,purchases:[{id:'p',wineryVisitId:'v',acquisitionDate:'2026-09-05',acquisitionType:'purchased'}] as CellarData['purchases']}});expect((screen.getByLabelText('Wine name') as HTMLInputElement).value).toBe('');expect((screen.getByLabelText('Vintage') as HTMLInputElement).value).toBe('');expect((screen.getByLabelText('Quantity') as HTMLInputElement).value).toBe('1');expect((screen.getByLabelText('Storage') as HTMLSelectElement).value).toBe('rack');change('Wine name','Next Wine');submit();await waitFor(()=>expect(complete).toHaveBeenCalled());expect(api.rpc.mock.calls[0][1].p_details.purchase_id).toBe('p')
+})
+it('date inference handles none/one/multiple, Visit inheritance and explicit override',()=>{
+ expect(inferEntryContext(data,'w','1900-01-01',undefined,undefined)).toMatchObject({tripId:'',visitId:'',ambiguousTrip:false});expect(inferEntryContext(data,'w','2026-09-05',undefined,undefined)).toMatchObject({tripId:'t',visitId:'v'});const linked={...data,travelReferences:[{wineryVisitId:'v',externalId:'linked'}] as CellarData['travelReferences']};expect(inferEntryContext(linked,'w','2026-09-05',undefined,undefined).tripId).toBe('linked');expect(inferEntryContext(linked,'w','2026-09-05',undefined,'').tripId).toBe('');expect(inferEntryContext({...data,visits:[...data.visits,{...data.visits[0],id:'v2'}]},'w','2026-09-05',undefined,undefined).ambiguousVisit).toBe(true)
+})

@@ -131,10 +131,10 @@ Deno.serve(async (request: Request) => {
   if (authError || !authData.user) return Response.json({ error: "Sign in is required." }, { status: 401, headers: corsHeaders });
 
   try {
-    const body = await request.json() as { action?: string; entityKind?: EntityKind; entityId?: string; force?: boolean; householdId?: string; jobId?: string };
+    const body = await request.json() as { action?: string; entityKind?: EntityKind; entityId?: string; force?: boolean; householdId?: string; jobId?: string; draft?: JsonObject };
     if (body.action === "continue_batch") {
       if (!body.jobId) throw new Error("A background job is required.");
-      const { data: job } = await client.from("enrichment_jobs").select("*").eq("id", body.jobId).eq("status", "running").maybeSingle();
+      const { data: job } = await client.from("enrichment_jobs").select("*").eq("id", body.jobId).eq("created_by", authData.user.id).eq("status", "running").maybeSingle();
       if (!job) return Response.json({ running: false }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       EdgeRuntime.waitUntil(processJobStep(client, authorization, job as JsonObject));
       return Response.json({ running: true, jobId: job.id }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -146,15 +146,27 @@ Deno.serve(async (request: Request) => {
       const { data: existing } = await client.from("enrichment_jobs").select("*").eq("household_id", body.householdId).eq("entity_kind", body.entityKind).eq("status", "running").maybeSingle();
       if (existing) return Response.json({ started: false, jobId: existing.id, remaining: existing.remaining_count }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const table = body.entityKind === "wine" ? "wines" : "wineries", idColumn = body.entityKind === "wine" ? "wine_id" : "winery_id";
-      const [{ count: total }, { count: attempted }] = await Promise.all([
-        client.from(table).select("id", { count: "exact", head: true }).eq("household_id", body.householdId),
-        client.from("enrichment_attempts").select("id", { count: "exact", head: true }).eq("household_id", body.householdId).not(idColumn, "is", null),
+      const [{ data: records, error: recordsError }, { data: attempts, error: attemptsError }] = await Promise.all([
+        client.from(table).select("id").eq("household_id", body.householdId).limit(500),
+        client.from("enrichment_attempts").select(idColumn).eq("household_id", body.householdId).not(idColumn, "is", null),
       ]);
-      const remaining = Math.max(0, (total ?? 0) - (attempted ?? 0));
+      if (recordsError || attemptsError) throw recordsError ?? attemptsError;
+      const attemptedIds = new Set((attempts ?? []).map((row: JsonObject) => String(row[idColumn])));
+      const remaining = (records ?? []).filter((row: JsonObject) => !attemptedIds.has(String(row.id))).length;
       const { data: job, error: jobError } = await client.from("enrichment_jobs").insert({ household_id: body.householdId, entity_kind: body.entityKind, created_by: authData.user.id, remaining_count: remaining, status: remaining ? "running" : "completed", completed_at: remaining ? null : new Date().toISOString() }).select("*").single();
       if (jobError || !job) throw jobError ?? new Error("Could not start background enrichment.");
       if (remaining) EdgeRuntime.waitUntil(processJobStep(client, authorization, job as JsonObject));
       return Response.json({ started: Boolean(remaining), jobId: job.id, remaining }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (body.action === "preview_wine") {
+      if (!body.householdId || !body.draft) throw new Error("Wine identity is required.");
+      const name=String(body.draft.name??"").trim(), wineryName=String(body.draft.winery_name??"").trim();
+      const nv=body.draft.non_vintage===true;
+      const vintage=nv||body.draft.vintage==null||body.draft.vintage===""?null:Number(body.draft.vintage);
+      if (!name || name.length>200 || !wineryName || wineryName.length>200 || (vintage!==null && (!Number.isInteger(vintage)||vintage<1800||vintage>2300))) throw new Error("Enter a winery, wine name and valid vintage.");
+      const draft={household_id:body.householdId,name,winery_name:wineryName,vintage,non_vintage:nv};
+      const result=await enrichOne(client,authData.user.id,"wine","","find",true,draft);
+      return Response.json(result,{headers:{...corsHeaders,"Content-Type":"application/json"}});
     }
     if (body.entityKind !== "wine" && body.entityKind !== "winery") throw new Error("Choose a wine or winery.");
     if (!body.entityId) throw new Error("A record is required.");
@@ -205,16 +217,16 @@ async function processJobStep(client: ReturnType<typeof createClient>, authoriza
   }
 }
 
-async function enrichOne(client: ReturnType<typeof createClient>, userId: string, kind: EntityKind, entityId: string, attemptType: AttemptType, force: boolean) {
+async function enrichOne(client: ReturnType<typeof createClient>, userId: string, kind: EntityKind, entityId: string, attemptType: AttemptType, force: boolean, draftRecord?: JsonObject) {
   const table = kind === "wine" ? "wines" : "wineries";
   const idColumn = kind === "wine" ? "wine_id" : "winery_id";
   const onlineTable = kind === "wine" ? "wine_online_info" : "winery_online_info";
   const onlineId = kind === "wine" ? "wine_id" : "winery_id";
-  const { data: record, error: recordError } = await client.from(table).select("*").eq("id", entityId).single();
+  const { data: record, error: recordError } = draftRecord ? {data:draftRecord,error:null} : await client.from(table).select("*").eq("id", entityId).single();
   if (recordError || !record) throw new Error("Record not found or not authorized.");
   const { data: membership } = await client.from("household_members").select("role").eq("household_id", record.household_id).eq("user_id", userId).single();
   if (!membership || !["owner", "editor"].includes(membership.role)) throw new Error("Full household access is required.");
-  if (!force) {
+  if (!force && !draftRecord) {
     const { data: cached } = await client.from(onlineTable).select("*").eq(onlineId, entityId).maybeSingle();
     if (cached) return { cached: true, status: "enriched", onlineInfo: cached };
     const { data: prior } = await client.from("enrichment_attempts").select("*").eq(idColumn, entityId).in("status", ["ready_for_review", "no_match"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -227,17 +239,17 @@ async function enrichOne(client: ReturnType<typeof createClient>, userId: string
     client.from("enrichment_attempts").select("id", { count: "exact", head: true }).eq("household_id", record.household_id).gte("created_at", dayAgo),
   ]);
   if ((minuteCount ?? 0) >= 12 || (dayCount ?? 0) >= 300) throw new Error("Enrichment rate limit reached. Please try again later.");
-  const { data: attempt, error: attemptError } = await client.from("enrichment_attempts").insert({ household_id: record.household_id, [idColumn]: entityId, status: "searching", attempt_type: attemptType, created_by: userId, provider: "openai" }).select("*").single();
+  const { data: attempt, error: attemptError } = await client.from("enrichment_attempts").insert({ household_id: record.household_id, ...(draftRecord ? {draft_identity:draftRecord} : {[idColumn]:entityId}), status: "searching", attempt_type: attemptType, created_by: userId, provider: "openai" }).select("*").single();
   if (attemptError || !attempt) throw attemptError ?? new Error("Could not start enrichment.");
   try {
-    let winery: JsonObject | null = null;
+    let winery: JsonObject | null = draftRecord ? {name:draftRecord.winery_name} : null;
     if (kind === "wine" && record.winery_id) winery = (await client.from("wineries").select("*").eq("id", record.winery_id).single()).data as JsonObject | null;
     const { body, result, model } = await callOpenAI(kind, record as JsonObject, winery);
     const data = sanitizeData(kind, result.data);
     const sources = ((result.sources as JsonObject[] | undefined) ?? []).map(safeSource).filter(Boolean) as JsonObject[];
     const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
     const noMatch = result.confidence === "none" || result.match_type === "none" || Object.keys(data).length === 0 || sources.length === 0;
-    const autoAccepted = !noMatch && automaticAcceptance(kind, record as JsonObject, result, sources);
+    const autoAccepted = !draftRecord && !noMatch && automaticAcceptance(kind, record as JsonObject, result, sources);
     const status = noMatch ? "no_match" : autoAccepted ? "enriched" : "ready_for_review";
     const usage = body.usage && typeof body.usage === "object" ? body.usage : {};
     const update = await client.from("enrichment_attempts").update({ status, confidence: noMatch ? "none" : result.confidence, match_type: noMatch ? "none" : result.match_type, proposed_data: data, conflict_data: { conflicts }, match_explanation: String(result.match_explanation || ""), model, request_id: String(body.id || ""), auto_accepted: autoAccepted, completed_at: new Date().toISOString(), usage_data: usage }).eq("id", attempt.id).select("*").single();
